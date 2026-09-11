@@ -335,11 +335,13 @@ Ordered by how much damage they do if ignored.
    source data, a test suite built from published charts, and a visible citation on screen.
    Resist "close enough" pressure here more than anywhere else in the product.
 
-2. **Photo and file storage is not solved.** The schema stores a `storageKey`; nothing writes
-   bytes yet. Railway's filesystem is ephemeral, so this must be object storage (S3 or R2)
-   with presigned uploads and **authorized** reads. A public bucket would expose one
-   customer's garage interior to anyone with a URL, which is a tenant leak wearing a different
-   hat. This is the largest single gap remaining in Phase 1.
+2. **Photo storage is private, and must stay that way.** Solved in Phase 1a with Cloudflare
+   R2: presigned uploads straight from the device, and every read brokered by
+   `/api/files/photos/[id]` after a session and tenant check. Never enable public bucket
+   access or an `r2.dev` domain — a public object URL would expose one customer's garage
+   interior to anyone who guesses it, which is a tenant leak wearing a different hat. The
+   development fallback writes to local disk and logs a warning if it is ever reached in
+   production.
 
 3. **Offline is under-specified and easy to get wrong.** "Do not destroy unsaved inspection
    data" is achievable now with local draft persistence. True offline sync — queued mutations,
@@ -418,17 +420,19 @@ inventory ledger · estimate versioning and hashing · spring matching service �
 Job detail, Spring Calculator, Inventory, Customers, Money, More screens · realistic demo data ·
 29 tests covering tenant isolation, the ledger, spring matching and money math.
 
-**Phase 1a — Close the field loop (next)**
-Signup and progressive onboarding · customer/property/door create and edit · Door Passport
-screen · inspection workflow with add-to-estimate · Good/Better/Best estimate builder ·
-signature capture with version freezing · job completion checklist · invoice generation ·
-manual payment recording · parts-used posting to the ledger.
+**Phase 1a — Close the field loop (complete)**
+Signup and progressive onboarding · customer/property/door creation · Door Passport screen
+with spring and opener history · inspection workflow with one-tap add-to-estimate ·
+Good/Better/Best estimate builder with reusable packages · signature capture with version
+freezing · transactional job completion · invoice generation from the signed option · manual
+payment recording · R2 photo capture. See [PHASE-1A.md](PHASE-1A.md) for what shipped, the
+shortcuts taken and what is not production-ready.
 
 **Phase 1b — Make it shippable**
-Object storage for photos and voice notes with authorized reads · price book management UI ·
-inventory adjust and transfer screens · team invitations · company settings · global search
-across customers, phones, addresses, SKUs and spring specs · platform admin dashboard ·
-subscription state enforcement · review-request infrastructure · PWA polish and install prompt.
+Price book management UI · inventory adjust and transfer screens · team invitations · global
+search across customers, phones, addresses, SKUs and spring specs · customer portal · platform
+admin dashboard · subscription state enforcement · PDF documents · schedule views · rate
+limiting · Postgres RLS · PWA install prompt.
 
 **Phase 2 — Money in, messages out**
 Stripe payments and Stripe Billing · customer portal (view, select, sign, pay) · SMS and email
@@ -472,15 +476,18 @@ status-specific chips, `Field` / `Input` / `Select` / `SegmentedControl` / `Step
 
 ---
 
-## 12. Open questions for you
+## 12. Decisions taken
 
-None of these block Phase 1a; each changes what gets built after it.
+All five open questions were answered before Phase 1a and are implemented:
 
-1. **Object storage** — S3, Cloudflare R2, or Railway volumes? This is the next real decision
-   and it gates photos, which the spec calls extremely important.
-2. **Tax** — is a single company-level rate acceptable for launch, or do you already have
-   customers crossing jurisdictions?
-3. **Labor cost** — should a solo operator's own time default to ignored (current behaviour),
-   or should onboarding ask for an hourly cost so gross profit means something?
-4. **Trial length** — 14 days is configurable via `TRIAL_DAYS`; confirm before signup ships.
-5. **Review link** — Google only at launch, or should the schema carry several platforms?
+1. **Object storage** — Cloudflare R2, private bucket, presigned uploads, authorized reads
+   through the application. A local-disk driver mirrors the flow for development.
+2. **Tax** — a company default that seeds each document, overridable per estimate and invoice,
+   with `taxJurisdiction` reserved for location-based rates later.
+3. **Labor cost** — opt-in, off by default; a solo operator is never asked to invent an hourly
+   cost for themselves.
+4. **Trial** — 14 days, configurable via `TRIAL_DAYS`.
+5. **Reviews** — Google is the only destination in the UI; `ReviewDestination` stores providers
+   generically so Facebook or Yelp need no migration.
+
+See [PHASE-1A.md](PHASE-1A.md) for how each was built.

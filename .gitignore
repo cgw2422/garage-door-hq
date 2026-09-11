@@ -19,3 +19,7 @@ npm-debug.log*
 next-env.d.ts
 tsconfig.tsbuildinfo
 /public/uploads/
+.storage/
+e2e-screenshots/
+.storage/
+.storage-test/

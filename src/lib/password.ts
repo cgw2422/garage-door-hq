@@ -14,5 +14,5 @@ export function verifyPassword(plain: string, hash: string): Promise<boolean> {
   return bcrypt.compare(plain, hash)
 }
 
-/** Deliberately modest: length beats character-class theatre. */
-export const PASSWORD_MIN_LENGTH = 10
+/** Re-exported for server code; the browser imports it from password-policy. */
+export { PASSWORD_MIN_LENGTH } from './password-policy'

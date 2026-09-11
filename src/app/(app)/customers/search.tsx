@@ -9,17 +9,23 @@ import { SearchIcon } from '@/components/ui/icons'
  * Search is deliberately one large field. A technician looking up a repeat
  * customer from a driveway types a phone number, not a filter expression.
  */
-export function CustomerSearch({ initialQuery }: { initialQuery: string }) {
+export function CustomerSearch({
+  initialQuery,
+  basePath = '/customers',
+}: {
+  initialQuery: string
+  basePath?: string
+}) {
   const router = useRouter()
   const [value, setValue] = useState(initialQuery)
 
   useEffect(() => {
     if (value === initialQuery) return
     const timer = setTimeout(() => {
-      router.replace(value ? `/customers?q=${encodeURIComponent(value)}` : '/customers')
+      router.replace(value ? `${basePath}?q=${encodeURIComponent(value)}` : basePath)
     }, 250)
     return () => clearTimeout(timer)
-  }, [value, initialQuery, router])
+  }, [value, initialQuery, router, basePath])
 
   return (
     <div className="relative">

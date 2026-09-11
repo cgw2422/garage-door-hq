@@ -65,21 +65,36 @@ async function applyDelta(
   })
 }
 
-/**
- * Post one or more moves atomically. Used by receiving, transfers, manual
- * adjustments and - most often - recording the parts used on a job.
- */
-export async function postLedgerMoves(params: {
+export interface PostMovesParams {
   organizationId: string
   actorId: string | null
   moves: LedgerMove[]
   /** Reject a move that would drive a location negative. */
   allowNegative?: boolean
-}) {
+}
+
+/**
+ * Post one or more moves atomically. Used by receiving, transfers, manual
+ * adjustments and - most often - recording the parts used on a job.
+ */
+export async function postLedgerMoves(params: PostMovesParams) {
+  return prisma.$transaction((tx) => postLedgerMovesTx(tx, params))
+}
+
+/**
+ * The same posting logic inside a caller's transaction.
+ *
+ * Job completion needs the ledger, the Door Passport and the invoice to commit
+ * or fail together, so it owns the transaction and calls this.
+ */
+export async function postLedgerMovesTx(
+  tx: Prisma.TransactionClient,
+  params: PostMovesParams,
+) {
   const { organizationId, actorId, moves } = params
   moves.forEach(assertValid)
 
-  return prisma.$transaction(async (tx) => {
+  {
     const created = []
 
     for (const move of moves) {
@@ -129,7 +144,7 @@ export async function postLedgerMoves(params: {
     }
 
     return created
-  })
+  }
 }
 
 /**

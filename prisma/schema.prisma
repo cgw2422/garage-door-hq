@@ -117,11 +117,14 @@ model Organization {
   companySize       CompanySize @default(SOLO)
 
   /// Company-configurable business rules.
-  defaultPaymentTermsDays Int       @default(0)
-  googleReviewUrl         String?
-  laborCostPerHourCents   Int?
+  defaultPaymentTermsDays Int   @default(0)
   businessHours           Json?
-  onboardingCompletedAt   DateTime?
+
+  /// Internal labor cost is opt-in. A solo operator is never forced to invent
+  /// an hourly rate for themselves just to see a profit number.
+  laborCostEnabled      Boolean   @default(false)
+  laborCostPerHourCents Int?
+  onboardingCompletedAt DateTime?
 
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -155,6 +158,8 @@ model Organization {
   subscription          Subscription?
   referral              Referral?
   reviewRequests        ReviewRequest[]
+  reviewDestinations    ReviewDestination[]
+  inspectionRemedies    InspectionRemedy[]
   portalLinks           PortalLink[]
   communications        CommunicationLog[]
 }
@@ -768,6 +773,7 @@ model PriceBookItem {
   invoiceItems  InvoiceItem[]
   jobParts      JobPart[]
   packageItems  PriceBookPackageItem[]
+  remedies      InspectionRemedy[]
   springs       Spring[]
 
   @@unique([organizationId, sku])
@@ -795,6 +801,9 @@ model SpringSpec {
   @@index([cycleRating])
 }
 
+/// A reusable estimate option. Dropping a package onto an estimate copies its
+/// components in as individual priced lines, so the customer sees an itemized
+/// option rather than an opaque bundle.
 model PriceBookPackage {
   id             String  @id @default(uuid())
   organizationId String
@@ -804,11 +813,17 @@ model PriceBookPackage {
   priceCents     Int?
   isActive       Boolean @default(true)
 
+  /// Where this package usually lands in a Good/Better/Best presentation.
+  defaultTier          EstimateTier?
+  isRecommendedDefault Boolean       @default(false)
+  sortOrder            Int           @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   items        PriceBookPackageItem[]
+  remedies     InspectionRemedy[]
 
   @@index([organizationId, isActive])
 }
@@ -955,11 +970,18 @@ model Estimate {
   title      String?
   status     EstimateStatus @default(DRAFT)
 
-  selectedOptionId String?   @unique
-  taxRateBps       Int       @default(0)
-  expiresAt        DateTime?
-  customerMessage  String?
-  termsText        String?
+  selectedOptionId String? @unique
+
+  /// Copied from the organization when the estimate is created, then owned by
+  /// this document. `taxRateOverridden` records that a human changed it, and
+  /// `taxJurisdiction` is the hook for location-based rates later - nothing
+  /// computes it today.
+  taxRateBps        Int       @default(0)
+  taxRateOverridden Boolean   @default(false)
+  taxJurisdiction   String?
+  expiresAt         DateTime?
+  customerMessage   String?
+  termsText         String?
 
   sentAt     DateTime?
   viewedAt   DateTime?
@@ -1097,7 +1119,10 @@ model Invoice {
   paidAt   DateTime?
   voidedAt DateTime?
 
-  taxRateBps    Int @default(0)
+  taxRateBps        Int     @default(0)
+  taxRateOverridden Boolean @default(false)
+  taxJurisdiction   String?
+
   subtotalCents Int @default(0)
   discountCents Int @default(0)
   taxCents      Int @default(0)
@@ -1243,6 +1268,15 @@ model Signature {
   @@index([estimateId])
 }
 
+/// Direct-to-storage uploads are two-phase: the row is created PENDING, the
+/// browser PUTs the bytes to a presigned URL, then the row is confirmed READY.
+/// A PENDING row is never shown to anyone.
+enum UploadStatus {
+  PENDING
+  READY
+  FAILED
+}
+
 enum PhotoKind {
   BEFORE
   AFTER
@@ -1260,12 +1294,14 @@ model Photo {
   organizationId String
   kind           PhotoKind @default(OTHER)
 
-  storageKey  String
-  caption     String?
-  width       Int?
-  height      Int?
-  byteSize    Int?
-  contentType String?
+  storageKey   String       @unique
+  uploadStatus UploadStatus @default(PENDING)
+  uploadedAt   DateTime?
+  caption      String?
+  width        Int?
+  height       Int?
+  byteSize     Int?
+  contentType  String?
 
   jobId            String?
   customerId       String?
@@ -1298,7 +1334,9 @@ model VoiceNote {
   id             String @id @default(uuid())
   organizationId String
 
-  storageKey    String
+  storageKey    String       @unique
+  uploadStatus  UploadStatus @default(PENDING)
+  uploadedAt    DateTime?
   durationMs    Int?
   contentType   String?
   /// Populated later by a transcription provider. Nothing fabricates it now.
@@ -1435,11 +1473,77 @@ model CommunicationLog {
   @@index([organizationId, customerId, createdAt])
 }
 
+/// Where a review request points. Google is the only destination offered in the
+/// UI today, but nothing in the model assumes it: a company can hold several
+/// destinations and Facebook or Yelp need no schema change.
+enum ReviewProvider {
+  GOOGLE
+  FACEBOOK
+  YELP
+  BBB
+  ANGI
+  OTHER
+}
+
+model ReviewDestination {
+  id             String         @id @default(uuid())
+  organizationId String
+  provider       ReviewProvider @default(GOOGLE)
+  /// Shown to staff when more than one destination exists.
+  label          String?
+  url            String
+  isPrimary      Boolean        @default(true)
+  isActive       Boolean        @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requests     ReviewRequest[]
+
+  @@unique([organizationId, provider])
+  @@index([organizationId, isActive])
+}
+
+/// Maps an inspection finding to the work that fixes it.
+///
+/// This is what turns "Rollers: Worn" into a single tap that puts the right
+/// roller package on the estimate. Remedies are organization-owned rows, not
+/// hard-coded logic, so a company can tune what it offers for each finding.
+model InspectionRemedy {
+  id             String  @id @default(uuid())
+  organizationId String
+  /// Matches InspectionItem.componentKey ("rollers", "springs", ...).
+  componentKey   String
+  name           String
+  description    String?
+
+  /// Exactly one of these is set: a single catalog line or a whole package.
+  priceBookItemId String?
+  packageId       String?
+  quantity        Decimal @default(1) @db.Decimal(10, 3)
+
+  /// Which findings this remedy is offered for. Empty means any actionable one.
+  forStatuses InspectionItemStatus[] @default([])
+  sortOrder   Int                    @default(0)
+  isActive    Boolean                @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization  Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  priceBookItem PriceBookItem?    @relation(fields: [priceBookItemId], references: [id], onDelete: Cascade)
+  package       PriceBookPackage? @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, componentKey, isActive])
+}
+
 model ReviewRequest {
   id             String  @id @default(uuid())
   organizationId String
   customerId     String
   jobId          String?
+  destinationId  String?
 
   status       CommunicationStatus @default(QUEUED)
   reviewUrl    String
@@ -1449,9 +1553,10 @@ model ReviewRequest {
 
   createdAt DateTime @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  job          Job?         @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  job          Job?               @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  destination  ReviewDestination? @relation(fields: [destinationId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, status])
 }

@@ -28,6 +28,53 @@ export interface AppSession {
   db: TenantDb
 }
 
+export interface AuthenticatedUser {
+  userId: string
+  email: string
+  firstName: string
+  lastName: string
+  fullName: string
+  platformRole: PlatformRole
+  /** False between signing up and finishing the company step of onboarding. */
+  hasOrganization: boolean
+}
+
+/**
+ * The signed-in user, with or without a company.
+ *
+ * Onboarding needs this: between creating an account and provisioning an
+ * organization there is a real, valid session that simply has no tenant yet.
+ * Everything past onboarding uses `getSession()` instead.
+ */
+export const getAuthenticatedUser = cache(async (): Promise<AuthenticatedUser | null> => {
+  const authSession = await auth()
+  const userId = authSession?.user?.id
+  if (!userId) return null
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { memberships: { where: { isActive: true }, select: { id: true } } },
+  })
+  if (!user) return null
+  if (user.sessionEpoch !== authSession.user.sessionEpoch) return null
+
+  return {
+    userId: user.id,
+    email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    fullName: `${user.firstName} ${user.lastName}`.trim(),
+    platformRole: user.platformRole,
+    hasOrganization: user.memberships.length > 0,
+  }
+})
+
+export async function requireUser(): Promise<AuthenticatedUser> {
+  const user = await getAuthenticatedUser()
+  if (!user) redirect('/login')
+  return user
+}
+
 /**
  * The single place an organization id enters the system. It comes from the
  * user's membership row, resolved fresh on each request. Nothing here trusts a
@@ -83,11 +130,18 @@ export const getSession = cache(async (): Promise<AppSession | null> => {
   }
 })
 
-/** Use at the top of every authenticated page, layout and server action. */
+/**
+ * Use at the top of every authenticated page, layout and server action.
+ *
+ * A user who is signed in but has not finished onboarding is sent to finish it
+ * rather than back to the login screen they just came from.
+ */
 export async function requireSession(): Promise<AppSession> {
   const session = await getSession()
-  if (!session) redirect('/login')
-  return session
+  if (session) return session
+
+  const user = await getAuthenticatedUser()
+  redirect(user ? '/onboarding/company' : '/login')
 }
 
 export async function requirePermission(permission: Permission): Promise<AppSession> {

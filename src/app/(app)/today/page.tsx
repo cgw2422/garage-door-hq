@@ -224,8 +224,8 @@ export default async function TodayPage() {
           <div className="grid grid-cols-2 gap-2.5">
             <QuickAction href="/jobs/new" icon={<PlusIcon />} label="New Job" />
             <QuickAction href="/customers/new" icon={<UsersIcon />} label="New Customer" />
-            <QuickAction href="/estimates/new" icon={<DocumentIcon />} label="Create Estimate" />
-            <QuickAction href="/money/payments/new" icon={<CardIcon />} label="Take Payment" />
+            <QuickAction href="/estimates" icon={<DocumentIcon />} label="Estimates" />
+            <QuickAction href="/invoices" icon={<CardIcon />} label="Take Payment" />
           </div>
         </div>
 

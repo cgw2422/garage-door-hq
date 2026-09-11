@@ -46,6 +46,8 @@ const TENANT_MODELS = new Set<string>([
   'Membership',
   'Invitation',
   'AuditLog',
+  'Subscription',
+  'Referral',
 ])
 
 /** Operations whose `where` must be narrowed to the tenant. */

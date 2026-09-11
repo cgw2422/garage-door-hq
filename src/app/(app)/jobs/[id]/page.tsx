@@ -22,6 +22,10 @@ import {
   WrenchIcon,
 } from '@/components/ui/icons'
 import { JobTabs, type JobTab } from './tabs'
+import { JobStatusActions } from './status-actions'
+import { PhotoGrid } from '@/components/app/photo-grid'
+import { PhotoCapture } from '@/components/app/photo-capture'
+import { READY_PHOTOS } from '@/server/media/photos'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,7 +82,7 @@ export default async function JobDetailPage({
       estimates: { orderBy: { createdAt: 'desc' }, include: { selectedOption: true } },
       invoices: { orderBy: { createdAt: 'desc' } },
       parts: true,
-      photos: { orderBy: { createdAt: 'desc' } },
+      photos: { where: READY_PHOTOS, orderBy: { createdAt: 'desc' } },
       notes: { orderBy: { createdAt: 'desc' }, include: { author: { select: { firstName: true } } } },
     },
   })
@@ -435,29 +439,37 @@ export default async function JobDetailPage({
         ) : null}
 
         {tab === 'photos' ? (
-          <Card padded={false}>
-            <div className="px-4 pt-4">
-              <CardHeader title={`Photos (${job.photos.length})`} />
-            </div>
-            {job.photos.length === 0 ? (
-              <EmptyState
-                icon={<CameraIcon />}
-                title="No photos yet"
-                body="Before and after shots are the fastest way to end a dispute before it starts."
+          <>
+            <Card padded={false}>
+              <div className="px-4 pt-4">
+                <CardHeader title={`Photos (${job.photos.length})`} />
+              </div>
+              {job.photos.length === 0 ? (
+                <EmptyState
+                  icon={<CameraIcon />}
+                  title="No photos yet"
+                  body="Before and after shots are the fastest way to end a dispute before it starts."
+                />
+              ) : (
+                <PhotoGrid photos={job.photos} />
+              )}
+            </Card>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <PhotoCapture
+                kind="BEFORE"
+                label="Before"
+                target={{ jobId: job.id }}
+                revalidate={`/jobs/${job.id}`}
               />
-            ) : (
-              <ul className="grid grid-cols-3 gap-1.5 p-3 pt-0">
-                {job.photos.map((photo) => (
-                  <li
-                    key={photo.id}
-                    className="flex aspect-square items-center justify-center rounded-[--radius-control] bg-surface-sunken text-[0.6875rem] font-semibold uppercase tracking-wide text-ink-subtle"
-                  >
-                    {photo.kind}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+              <PhotoCapture
+                kind="AFTER"
+                label="After"
+                target={{ jobId: job.id }}
+                revalidate={`/jobs/${job.id}`}
+              />
+            </div>
+          </>
         ) : null}
 
         {tab === 'notes' ? (
@@ -486,18 +498,21 @@ export default async function JobDetailPage({
       </PageBody>
 
       <StickyActions>
-        <ButtonLink
-          href={`/jobs/${job.id}/photos/new`}
-          variant="secondary"
-          size="lg"
-          icon={<CameraIcon />}
-          className="flex-1"
-        >
-          Add Photos
-        </ButtonLink>
-        <ButtonLink href={`/jobs/${job.id}/estimates/new`} size="lg" className="flex-1">
-          Create Estimate
-        </ButtonLink>
+        {job.status === 'COMPLETED' || job.status === 'CANCELLED' ? (
+          <JobStatusActions jobId={job.id} status={job.status} />
+        ) : (
+          <>
+            <ButtonLink
+              href={`/jobs/${job.id}/inspection`}
+              variant="secondary"
+              size="lg"
+              className="flex-1"
+            >
+              Inspect
+            </ButtonLink>
+            <JobStatusActions jobId={job.id} status={job.status} />
+          </>
+        )}
       </StickyActions>
     </>
   )

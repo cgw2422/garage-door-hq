@@ -16,31 +16,34 @@ One plan. **$39.99/month, everything included, no limits.**
 
 ## Status
 
-This branch is the **foundation** — the specification's "get the foundation correct first"
-step, plus the first working screens.
+**Phase 1a is complete**: the full field loop runs end to end.
 
-**Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) first.** It covers the schema and its
-relationships, the multi-tenant and authorization strategy, the inventory ledger, the
-estimate/invoice versioning model, the Spring Calculator's safety boundary, the risks worth
-knowing about, what is postponed from Phase 1 and why, and the phase plan.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the data model, multi-tenant and
+  authorization strategy, inventory ledger, estimate/invoice versioning, the Spring
+  Calculator's safety boundary, risks, and the phase plan.
+- [`docs/PHASE-1A.md`](docs/PHASE-1A.md) — what shipped, the shortcuts taken, and what is
+  **not** production-ready. Read this before deploying anything.
 
-**Working now**
+**The workflow that works today**
 
-- Multi-tenant Postgres schema (45 tables) with migration
-- Tenant-scoped data access, server-side authorization, RBAC
-- Email/password auth (Auth.js v5, bcrypt), DB-resolved roles, session invalidation
-- Design tokens and a reusable mobile-first component system
-- Today dashboard · Jobs list · Job detail (Job / Door / Photos / Notes) · Spring Calculator ·
-  Truck Inventory · Customers · Money dashboard · More · dark marketing landing · login
+new customer → property → Door Passport → job → on my way / arrived / start →
+garage-door inspection → one-tap Good/Better/Best from a finding → itemized estimate →
+customer selects and signs → complete the job → inventory deducted, Door Passport updated,
+invoice generated → payment recorded → passport history shows what changed.
+
+**Also working**
+
+- Multi-tenant Postgres schema (47 tables), tenant-scoped data access, server-side RBAC
+- Signup and progressive onboarding with a 14-day trial and referral attribution
+- Solo mode: one user and one truck means nothing is ever asked twice
+- Private photo capture on Cloudflare R2 — presigned uploads, authorized reads
 - Append-only inventory ledger with rebuildable stock levels
-- Estimate versioning with content hashing, so a signed document cannot silently change
-- Spring matching against live truck and warehouse stock
-- Installable PWA (manifest, icons, standalone display)
-- Realistic demo company with a live day, low stock and an unpaid invoice
-- 29 tests covering tenant isolation, the ledger, spring matching and money math
-
-**Not built yet** — see the phase plan in the architecture doc. The largest remaining Phase 1
-gap is object storage for photos.
+- Signed estimates frozen by version and content hash
+- Spring matching against live truck and warehouse stock (sizing still refused by design)
+- Company settings: tax rate, optional labor costing, review destination
+- Today · Jobs · Customers · Inventory · Money · Estimates · Invoices · Settings · Price Book
+- Installable PWA, realistic demo company
+- 65 tests plus a live browser end-to-end run of the whole workflow
 
 ---
 
@@ -87,7 +90,20 @@ npm run lint
 npm run db:migrate   # create/apply a dev migration
 npm run db:deploy    # apply migrations (production)
 npm run db:studio    # browse the database
+npm run e2e          # live browser run of the whole field workflow
 ```
+
+### The end-to-end run
+
+```bash
+npm run db:seed                    # the flow consumes real stock, so re-seed each time
+npm run build && npm start &
+npm run e2e                        # or: node scripts/e2e-flow.mjs http://127.0.0.1:3000
+```
+
+It drives a real Chromium at phone width through sign-in, customer creation, Door Passport,
+job, inspection, tiered estimate, signature, completion, invoicing and payment, then asserts
+the passport history and the inventory ledger. Screenshots land in `e2e-screenshots/`.
 
 ---
 
@@ -98,6 +114,10 @@ npm run db:studio    # browse the database
    `AUTH_TRUST_HOST=true`.
 3. Build command `npm run build`, start command `npm start`.
 4. Run `npm run db:deploy` on deploy to apply migrations.
+5. Create a **private** Cloudflare R2 bucket and set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+   `R2_SECRET_ACCESS_KEY` and `R2_BUCKET`. Do not enable public access or an `r2.dev` domain —
+   photos are served only through the app's authorized route. Without these the app falls back
+   to local disk, which a container does not keep.
 
 Every configuration value is an environment variable; `.env.example` documents them all. No
 secrets are committed.
@@ -110,19 +130,23 @@ secrets are committed.
 prisma/schema.prisma      the data model, heavily commented
 prisma/seed.ts            demo company
 docs/ARCHITECTURE.md      the proposal: schema, tenancy, phases, risks
+docs/PHASE-1A.md          what shipped in Phase 1a, shortcuts, and what is not production-ready
 src/app/(marketing)       public, dark brand surface
 src/app/(auth)            login
 src/app/(app)             the field application — light UI, requireSession() in the layout
 src/components/ui         design system primitives
 src/components/app        navigation and page shell
 src/lib                   db, auth, session, tenancy, rbac, money, measure, numbering, audit
-src/server                domain services: inventory ledger, springs, estimates, job queries
-tests                     tenant isolation, ledger invariants, spring matching, money math
+src/server                domain services: storage, media, inventory ledger, springs,
+                          estimates, inspections, invoices, doors, jobs, organizations
+scripts/e2e-flow.mjs      live browser walkthrough of the whole field workflow
+tests                     tenant isolation, ledger invariants, spring matching, money math,
+                          estimate/signature guarantees, completion atomicity, storage, onboarding
 ```
 
 ---
 
-## Two rules worth repeating
+## Three rules worth repeating
 
 **Tenant isolation.** Organization ids are resolved server-side from the session, never from a
 URL or a request body, and `tenantDb()` injects the filter into every query. Authorization
@@ -132,3 +156,8 @@ happens in the action that does the work, not in the component that draws the bu
 catalog and reports live stock — a database lookup. Calculating a spring from a door weight
 refuses to answer until verified manufacturer data is registered, because a wrong answer puts
 a technician under a loaded door. There is no placeholder arithmetic anywhere in that module.
+
+**Completing a job is one transaction.** Parts leaving the truck, the Door Passport gaining a
+new spring system and a timeline entry, the invoice being generated from the signed option and
+the job's costing being recalculated either all happen or none do. A partial completion would
+leave a business with books it cannot trust.

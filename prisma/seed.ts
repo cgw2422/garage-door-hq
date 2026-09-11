@@ -1,35 +1,27 @@
 /**
  * Demo data for "Precision Garage Door Services — DEMO".
  *
- * The goal is a company that looks like it has been running for a while:
- * repeat customers, doors with history, a truck that is low on one spring size,
- * an unpaid invoice, and a day that is half finished. Nothing here is a
- * placeholder string — it is the kind of data a real shop would have.
+ * The company is provisioned through the same `provisionOrganization` path a
+ * real signup uses, then given history: repeat customers, doors with service
+ * records, a truck that is low on one spring size, an unpaid invoice, and a day
+ * that is half finished.
  *
- * Safe to re-run: the script clears the demo organization first.
+ * Safe to re-run: the script resets the database first.
  */
-import {
-  PrismaClient,
-  type PriceBookCategory,
-  type WindDirection,
-} from '@prisma/client'
+import { PrismaClient, Prisma } from '@prisma/client'
 import { hashPassword } from '../src/lib/password'
 import { zoneOffsetMinutes } from '../src/server/jobs/queries'
-import { EXTENSION_SPRINGS, JOB_TYPES, LABOR, PARTS, TORSION_SPRINGS } from './seed-data'
+import { provisionOrganization } from '../src/server/organizations/provision'
+import { RESIDENTIAL_INSPECTION } from '../src/lib/inspection-template'
 
 const prisma = new PrismaClient()
 
 const DEMO_SLUG = 'precision-garage-door-demo'
 const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? 'GarageDoorHQ2026!'
 const PLATFORM_ADMIN_EMAIL = process.env.PLATFORM_ADMIN_EMAIL ?? 'admin@garagedoorhq.test'
-
-/** The demo company's timezone. Seeded times are wall-clock times there. */
 const TZ = 'America/New_York'
 
-/**
- * Today at a given hour in the company's timezone, so the dashboard shows a
- * live day no matter what timezone the container or developer machine is in.
- */
+/** Today at a given hour in the company's timezone, whatever the host's is. */
 function todayAt(hour: number, minute = 0): Date {
   const now = new Date()
   const [year, month, day] = new Intl.DateTimeFormat('en-CA', {
@@ -62,13 +54,10 @@ function monthsAgo(months: number): Date {
 /**
  * Wipe every table before seeding.
  *
- * A targeted delete of the demo organization is not enough: several relations
- * are deliberately `onDelete: Restrict` so the application can never destroy a
- * catalog item that a package references, or a customer that still has jobs.
- * Those guards are correct for the product and inconvenient for a seed, so the
- * seed resets the whole database instead of working around them.
- *
- * Refuses to run against production unless explicitly allowed.
+ * Several relations are deliberately `onDelete: Restrict` so the application
+ * can never destroy a catalog item a package references, or a customer who
+ * still has jobs. Those guards are right for the product and inconvenient for
+ * a seed, so the seed resets everything rather than working around them.
  */
 async function resetDatabase() {
   if (process.env.NODE_ENV === 'production' && process.env.ALLOW_SEED_RESET !== 'true') {
@@ -90,52 +79,11 @@ async function resetDatabase() {
 
 async function main() {
   console.log('Seeding Garage Door HQ demo data…')
-
   await resetDatabase()
 
   const passwordHash = await hashPassword(DEMO_PASSWORD)
 
-  // --- Organization -------------------------------------------------------
-  const org = await prisma.organization.create({
-    data: {
-      name: 'Precision Garage Door Services — DEMO',
-      slug: DEMO_SLUG,
-      phone: '(555) 214-7788',
-      email: 'office@precisiongaragedoor.test',
-      website: 'https://precisiongaragedoor.test',
-      addressLine1: '4120 Industrial Park Dr',
-      city: 'Charlotte',
-      state: 'NC',
-      postalCode: '28206',
-      timezone: 'America/New_York',
-      defaultTaxRateBps: 725, // 7.25%
-      companySize: 'SMALL_2_5',
-      googleReviewUrl: 'https://g.page/r/precision-garage-door/review',
-      laborCostPerHourCents: 4200,
-      onboardingCompletedAt: monthsAgo(14),
-      createdAt: monthsAgo(14),
-      numberSequences: {
-        create: [
-          { entity: 'JOB', nextValue: 1044 },
-          { entity: 'ESTIMATE', nextValue: 1023 },
-          { entity: 'INVOICE', nextValue: 1009 },
-          { entity: 'DOOR', nextValue: 2047 },
-          { entity: 'CUSTOMER', nextValue: 1032 },
-        ],
-      },
-      subscription: {
-        create: {
-          status: 'ACTIVE',
-          planCode: 'standard-monthly',
-          priceCents: 3999,
-          currentPeriodStart: daysAgo(12),
-          currentPeriodEnd: daysAgo(-18),
-        },
-      },
-    },
-  })
-
-  // --- Team ---------------------------------------------------------------
+  // --- People --------------------------------------------------------------
   const mike = await prisma.user.create({
     data: {
       email: 'mike@precisiongaragedoor.test',
@@ -144,7 +92,6 @@ async function main() {
       lastName: 'Delgado',
       phone: '(555) 214-7788',
       emailVerifiedAt: monthsAgo(14),
-      memberships: { create: { organizationId: org.id, role: 'OWNER' } },
     },
   })
 
@@ -156,15 +103,12 @@ async function main() {
       lastName: 'Rivera',
       phone: '(555) 214-7790',
       emailVerifiedAt: monthsAgo(6),
-      memberships: { create: { organizationId: org.id, role: 'TECHNICIAN' } },
     },
   })
 
-  // A Garage Door HQ staff account, separate from any company's OWNER role.
-  await prisma.user.upsert({
-    where: { email: PLATFORM_ADMIN_EMAIL },
-    update: { platformRole: 'PLATFORM_ADMIN' },
-    create: {
+  // Garage Door HQ staff — deliberately not an OWNER of any company.
+  await prisma.user.create({
+    data: {
       email: PLATFORM_ADMIN_EMAIL,
       passwordHash,
       firstName: 'Platform',
@@ -173,202 +117,199 @@ async function main() {
     },
   })
 
-  // --- Job types ----------------------------------------------------------
-  await prisma.jobType.createMany({
-    data: JOB_TYPES.map((type, index) => ({
-      organizationId: org.id,
-      name: type.name,
-      slug: type.slug,
-      isSystem: true,
-      sortOrder: index,
-    })),
-  })
-  const jobTypes = await prisma.jobType.findMany({ where: { organizationId: org.id } })
-  const jobType = (slug: string) => jobTypes.find((type) => type.slug === slug)!
-
-  // --- Inventory locations -------------------------------------------------
-  const warehouse = await prisma.inventoryLocation.create({
-    data: { organizationId: org.id, name: 'Warehouse', kind: 'WAREHOUSE' },
-  })
-  const truck1 = await prisma.inventoryLocation.create({
-    data: { organizationId: org.id, name: 'Truck #1', kind: 'TRUCK', assignedUserId: mike.id },
-  })
-  const truck2 = await prisma.inventoryLocation.create({
-    data: { organizationId: org.id, name: 'Truck #2', kind: 'TRUCK', assignedUserId: tony.id },
-  })
-
-  await prisma.membership.update({
-    where: { userId_organizationId: { userId: mike.id, organizationId: org.id } },
-    data: { defaultLocationId: truck1.id },
-  })
-  await prisma.membership.update({
-    where: { userId_organizationId: { userId: tony.id, organizationId: org.id } },
-    data: { defaultLocationId: truck2.id },
-  })
-
-  // --- Price book ----------------------------------------------------------
-  const springRows = [...TORSION_SPRINGS, ...EXTENSION_SPRINGS]
-  const springItems = new Map<string, string>()
-
-  for (const spring of springRows) {
-    const item = await prisma.priceBookItem.create({
-      data: {
-        organizationId: org.id,
-        category: 'SPRINGS',
-        name: spring.name,
-        sku: spring.sku,
-        costCents: spring.costCents,
-        priceCents: spring.priceCents,
-        trackInventory: true,
-        supplier: 'Service Spring Corp',
-        springSpec: {
-          create: {
-            type: spring.sku.startsWith('ES-') ? 'EXTENSION' : 'TORSION',
-            wireSizeInches: spring.wire,
-            insideDiameterInches: spring.id,
-            lengthInches: spring.length,
-            wind: spring.wind as WindDirection,
-            cycleRating: spring.cycles,
-            colorCode: spring.colorCode,
-          },
-        },
-      },
-    })
-    springItems.set(spring.sku, item.id)
-  }
-
-  const partItems = new Map<string, string>()
-  for (const part of PARTS) {
-    const item = await prisma.priceBookItem.create({
-      data: {
-        organizationId: org.id,
-        category: part.category as PriceBookCategory,
-        name: part.name,
-        sku: part.sku,
-        costCents: part.costCents,
-        priceCents: part.priceCents,
-        unit: part.unit,
-        trackInventory: true,
-      },
-    })
-    partItems.set(part.sku, item.id)
-  }
-
-  for (const labor of LABOR) {
-    const item = await prisma.priceBookItem.create({
-      data: {
-        organizationId: org.id,
-        category: labor.category as PriceBookCategory,
-        name: labor.name,
-        sku: labor.sku,
-        costCents: labor.costCents,
-        priceCents: labor.priceCents,
-        taxable: labor.taxable,
-        unit: 'ea',
-        trackInventory: false,
-      },
-    })
-    partItems.set(labor.sku, item.id)
-  }
-
-  // A package, because bundling is how a good shop sells a tune-up.
-  await prisma.priceBookPackage.create({
+  // --- The company, provisioned exactly like a real signup -----------------
+  const affiliate = await prisma.affiliate.create({
     data: {
-      organizationId: org.id,
-      name: 'Premium Spring Package',
-      description:
-        'Two 25,000-cycle torsion springs, replacement labor, full safety inspection, lubrication and a 5-year warranty.',
-      priceCents: 57900,
-      items: {
-        create: [
-          { priceBookItemId: springItems.get('TS-2250-200-270-L25')!, quantity: 1 },
-          { priceBookItemId: springItems.get('TS-2250-200-270-R25')!, quantity: 1 },
-          { priceBookItemId: partItems.get('LBR-SPRING')!, quantity: 1 },
-          { priceBookItemId: partItems.get('LBR-TUNEUP')!, quantity: 1 },
-        ],
-      },
+      name: 'Garage Door Operators Community',
+      email: 'partner@gdocommunity.test',
+      code: 'GDOC20',
+      commissionPercent: 20,
+      notes: 'Skool community partner — 20% recurring.',
+    },
+  })
+
+  const { organization } = await provisionOrganization({
+    ownerUserId: mike.id,
+    name: 'Precision Garage Door Services — DEMO',
+    slug: DEMO_SLUG,
+    companySize: 'SMALL_2_5',
+    phone: '(555) 214-7788',
+    postalCode: '28206',
+    timezone: TZ,
+    referralCode: affiliate.code,
+    now: monthsAgo(14),
+  })
+  const orgId = organization.id
+
+  await prisma.organization.update({
+    where: { id: orgId },
+    data: {
+      email: 'office@precisiongaragedoor.test',
+      website: 'https://precisiongaragedoor.test',
+      addressLine1: '4120 Industrial Park Dr',
+      city: 'Charlotte',
+      state: 'NC',
+      defaultTaxRateBps: 725,
+      onboardingCompletedAt: monthsAgo(14),
+      // A company that has been running a while turned labor costing on.
+      laborCostEnabled: true,
+      laborCostPerHourCents: 4200,
+    },
+  })
+
+  await prisma.subscription.update({
+    where: { organizationId: orgId },
+    data: {
+      status: 'ACTIVE',
+      trialEndsAt: monthsAgo(13),
+      currentPeriodStart: daysAgo(12),
+      currentPeriodEnd: daysAgo(-18),
+    },
+  })
+
+  // Readable numbers that look like a company with history.
+  //
+  // Each value must be strictly greater than the highest number this seed
+  // hands out below, or the next record a user creates collides on
+  // (organizationId, number).
+  for (const [entity, value] of [
+    ['JOB', 1044], // seeded jobs run to 1043
+    ['ESTIMATE', 1023],
+    ['INVOICE', 1009], // seeded invoices run to 1008
+    ['DOOR', 2049], // seeded doors run to 2048
+    ['CUSTOMER', 1033], // seeded customers run to 1032
+  ] as const) {
+    await prisma.numberSequence.update({
+      where: { organizationId_entity: { organizationId: orgId, entity } },
+      data: { nextValue: value },
+    })
+  }
+
+  await prisma.reviewDestination.create({
+    data: {
+      organizationId: orgId,
+      provider: 'GOOGLE',
+      label: 'Google',
+      url: 'https://g.page/r/precision-garage-door/review',
+      isPrimary: true,
+    },
+  })
+
+  // --- Team and trucks -----------------------------------------------------
+  const locations = await prisma.inventoryLocation.findMany({ where: { organizationId: orgId } })
+  const warehouse = locations.find((location) => location.kind === 'WAREHOUSE')!
+  const truck1 = locations.find((location) => location.name === 'Truck #1')!
+
+  const truck2 = await prisma.inventoryLocation.create({
+    data: { organizationId: orgId, name: 'Truck #2', kind: 'TRUCK', assignedUserId: tony.id },
+  })
+
+  await prisma.membership.create({
+    data: {
+      userId: tony.id,
+      organizationId: orgId,
+      role: 'TECHNICIAN',
+      defaultLocationId: truck2.id,
     },
   })
 
   // --- Stock ---------------------------------------------------------------
-  // Truck #1 mirrors the approved concept's inventory screen, including the
-  // one spring size that is about to run out.
-  const stock: Array<[string, string, number, number, string | null]> = [
-    // [locationId, sku, quantity, minQuantity, bin]
-    [truck1.id, 'TS-2250-200-270-L', 1, 2, 'A1'],
-    [truck1.id, 'TS-2250-200-270-R', 1, 2, 'A1'],
-    [truck1.id, 'TS-2250-200-270-L25', 2, 2, 'A2'],
-    [truck1.id, 'TS-2250-200-270-R25', 2, 2, 'A2'],
-    [truck1.id, 'TS-2500-200-320-L', 3, 2, 'A3'],
-    [truck1.id, 'TS-2500-200-320-R', 3, 2, 'A3'],
-    [truck1.id, 'TS-2070-175-240-L', 2, 1, 'A4'],
-    [truck1.id, 'TS-2070-175-240-R', 2, 1, 'A4'],
-    [truck1.id, 'ES-140-250-L', 4, 2, 'B1'],
-    [truck1.id, 'ES-160-250-R', 4, 2, 'B1'],
-    [truck1.id, 'RLR-NYL-13', 32, 20, 'C1'],
-    [truck1.id, 'RLR-STL-10', 14, 10, 'C1'],
-    [truck1.id, 'CBL-7FT-SET', 8, 4, 'C2'],
-    [truck1.id, 'CBL-8FT-SET', 4, 2, 'C2'],
-    [truck1.id, 'DRM-400-8', 8, 4, 'C3'],
-    [truck1.id, 'BRG-625', 10, 6, 'C3'],
-    [truck1.id, 'BRG-CTR', 4, 2, 'C3'],
-    [truck1.id, 'HNG-NO2', 16, 10, 'D1'],
-    [truck1.id, 'HNG-NO3', 12, 10, 'D1'],
-    [truck1.id, 'OPN-LM-87504', 2, 1, 'E1'],
-    [truck1.id, 'OPN-LM-8500W', 2, 1, 'E1'],
-    [truck1.id, 'RMT-893MAX', 11, 6, 'E2'],
-    [truck1.id, 'KPD-877MAX', 5, 3, 'E2'],
-    [truck1.id, 'EYE-041A', 4, 2, 'E3'],
-    [truck1.id, 'WLC-889LM', 3, 2, 'E3'],
-    [truck1.id, 'SEAL-BTM-16', 15, 6, 'F1'],
-    [truck1.id, 'SEAL-JMB-KIT', 9, 4, 'F1'],
-    [truck2.id, 'TS-2250-200-270-L', 4, 2, 'A1'],
-    [truck2.id, 'TS-2250-200-270-R', 4, 2, 'A1'],
-    [truck2.id, 'RLR-NYL-13', 24, 20, 'C1'],
-    [truck2.id, 'CBL-7FT-SET', 5, 4, 'C2'],
-    [warehouse.id, 'TS-2250-200-270-L', 14, 8, 'R2-04'],
-    [warehouse.id, 'TS-2250-200-270-R', 14, 8, 'R2-04'],
-    [warehouse.id, 'TS-2250-200-270-L25', 9, 4, 'R2-05'],
-    [warehouse.id, 'TS-2250-200-270-R25', 9, 4, 'R2-05'],
-    [warehouse.id, 'TS-2500-200-320-L', 11, 6, 'R2-06'],
-    [warehouse.id, 'TS-2500-200-320-R', 11, 6, 'R2-06'],
-    [warehouse.id, 'RLR-NYL-13', 180, 100, 'R4-01'],
-    [warehouse.id, 'OPN-LM-87504', 6, 3, 'R6-01'],
-    [warehouse.id, 'SEAL-BTM-16', 40, 20, 'R7-02'],
-  ]
+  const catalog = await prisma.priceBookItem.findMany({ where: { organizationId: orgId } })
+  const bySku = new Map(catalog.map((item) => [item.sku!, item]))
+  const idOf = (sku: string) => bySku.get(sku)!.id
 
-  const lookup = (sku: string) => springItems.get(sku) ?? partItems.get(sku)!
+  /** Receive stock through the ledger so every quantity has a transaction behind it. */
+  async function receive(locationId: string, sku: string, quantity: number, bin?: string) {
+    const item = bySku.get(sku)
+    if (!item) throw new Error(`Unknown SKU in seed: ${sku}`)
 
-  for (const [locationId, sku, quantity, minQuantity, bin] of stock) {
-    await prisma.stockLevel.create({
-      data: {
-        organizationId: org.id,
-        locationId,
-        priceBookItemId: lookup(sku),
-        quantity,
-        minQuantity,
-        binLocation: bin,
-      },
-    })
-    // Opening balance, so the ledger explains every quantity on hand.
     await prisma.inventoryTransaction.create({
       data: {
-        organizationId: org.id,
-        priceBookItemId: lookup(sku),
+        organizationId: orgId,
+        priceBookItemId: item.id,
         kind: 'RECEIPT',
         toLocationId: locationId,
         quantity,
+        unitCostCents: item.costCents,
         actorId: mike.id,
         reason: 'Opening count',
         createdAt: daysAgo(45),
       },
     })
+
+    await prisma.stockLevel.upsert({
+      where: { locationId_priceBookItemId: { locationId, priceBookItemId: item.id } },
+      create: {
+        organizationId: orgId,
+        locationId,
+        priceBookItemId: item.id,
+        quantity,
+        binLocation: bin ?? null,
+      },
+      update: { quantity: { increment: quantity }, binLocation: bin ?? undefined },
+    })
+  }
+
+  const truck1Stock: Array<[string, number, string]> = [
+    // Deliberately at the minimum: the Restock list has to have something real in it.
+    ['TS-2250-200-270-L', 1, 'A1'],
+    ['TS-2250-200-270-R', 1, 'A1'],
+    ['TS-2250-200-270-L25', 2, 'A2'],
+    ['TS-2250-200-270-R25', 2, 'A2'],
+    ['TS-2500-200-320-L', 3, 'A3'],
+    ['TS-2500-200-320-R', 3, 'A3'],
+    ['TS-2070-175-240-L', 2, 'A4'],
+    ['TS-2070-175-240-R', 2, 'A4'],
+    ['ES-140-250-L', 4, 'B1'],
+    ['ES-160-250-R', 4, 'B1'],
+    ['RLR-NYL-13', 32, 'C1'],
+    ['RLR-STL-10', 14, 'C1'],
+    ['CBL-7FT-SET', 8, 'C2'],
+    ['CBL-8FT-SET', 4, 'C2'],
+    ['DRM-400-8', 8, 'C3'],
+    ['BRG-625', 10, 'C3'],
+    ['BRG-CTR', 4, 'C3'],
+    ['HNG-NO2', 16, 'D1'],
+    ['HNG-NO3', 12, 'D1'],
+    ['OPN-BELT-STD', 2, 'E1'],
+    ['OPN-WALL-MNT', 2, 'E1'],
+    ['RMT-STD', 11, 'E2'],
+    ['KPD-STD', 5, 'E2'],
+    ['EYE-PAIR', 4, 'E3'],
+    ['WLC-STD', 3, 'E3'],
+    ['SEAL-BTM-16', 15, 'F1'],
+    ['SEAL-JMB-KIT', 9, 'F1'],
+    ['LUB-KIT', 6, 'F2'],
+  ]
+  for (const [sku, quantity, bin] of truck1Stock) await receive(truck1.id, sku, quantity, bin)
+
+  for (const [sku, quantity] of [
+    ['TS-2250-200-270-L', 4],
+    ['TS-2250-200-270-R', 4],
+    ['RLR-NYL-13', 24],
+    ['CBL-7FT-SET', 5],
+  ] as Array<[string, number]>) {
+    await receive(truck2.id, sku, quantity, 'A1')
+  }
+
+  for (const [sku, quantity] of [
+    ['TS-2250-200-270-L', 14],
+    ['TS-2250-200-270-R', 14],
+    ['TS-2250-200-270-L25', 9],
+    ['TS-2250-200-270-R25', 9],
+    ['TS-2500-200-320-L', 11],
+    ['TS-2500-200-320-R', 11],
+    ['RLR-NYL-13', 180],
+    ['OPN-BELT-STD', 6],
+    ['SEAL-BTM-16', 40],
+  ] as Array<[string, number]>) {
+    await receive(warehouse.id, sku, quantity, 'R2')
   }
 
   // --- Customers, properties, doors ---------------------------------------
   const sarah = await prisma.customer.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       number: 1018,
       firstName: 'Sarah',
       lastName: 'Wilson',
@@ -379,7 +320,7 @@ async function main() {
       tags: ['repeat'],
       properties: {
         create: {
-          organizationId: org.id,
+          organizationId: orgId,
           nickname: 'Home',
           line1: '123 Maple Street',
           city: 'Charlotte',
@@ -396,12 +337,12 @@ async function main() {
 
   const sarahDoor = await prisma.door.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       propertyId: sarahProperty.id,
       number: 2043,
       nickname: 'Front Garage',
-      widthInches: 192, // 16'
-      heightInches: 84, // 7'
+      widthInches: 192,
+      heightInches: 84,
       panelCount: 4,
       manufacturer: 'Clopay',
       model: 'Premium Series 4050',
@@ -423,7 +364,7 @@ async function main() {
 
   await prisma.opener.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       doorId: sarahDoor.id,
       manufacturer: 'LiftMaster',
       model: '87504-267',
@@ -435,16 +376,16 @@ async function main() {
       wifiEnabled: true,
       smartHome: 'myQ',
       remoteCount: 2,
-      keypadInfo: '877MAX wireless keypad',
+      keypadInfo: 'Wireless keypad',
       installedAt: monthsAgo(18),
       warrantyEndsAt: monthsAgo(-30),
     },
   })
 
-  // The spring system that is about to fail — this is today's broken spring job.
+  // The 2-year-old 10K springs that are about to fail — today's broken spring job.
   await prisma.springSystem.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       doorId: sarahDoor.id,
       type: 'TORSION',
       shaftDiameter: '1"',
@@ -454,24 +395,8 @@ async function main() {
       installedAt: monthsAgo(24),
       springs: {
         create: [
-          {
-            wireSizeInches: 0.225,
-            insideDiameterInches: 2.0,
-            lengthInches: 27,
-            wind: 'LEFT_HAND',
-            quantity: 1,
-            cycleRating: 10000,
-            colorCode: 'Red',
-          },
-          {
-            wireSizeInches: 0.225,
-            insideDiameterInches: 2.0,
-            lengthInches: 27,
-            wind: 'RIGHT_HAND',
-            quantity: 1,
-            cycleRating: 10000,
-            colorCode: 'Red',
-          },
+          { wireSizeInches: 0.225, insideDiameterInches: 2, lengthInches: 27, wind: 'LEFT_HAND', quantity: 1, cycleRating: 10000, colorCode: 'Red' },
+          { wireSizeInches: 0.225, insideDiameterInches: 2, lengthInches: 27, wind: 'RIGHT_HAND', quantity: 1, cycleRating: 10000, colorCode: 'Red' },
         ],
       },
     },
@@ -479,40 +404,16 @@ async function main() {
 
   await prisma.doorEvent.createMany({
     data: [
-      {
-        doorId: sarahDoor.id,
-        kind: 'INSTALLED',
-        occurredAt: monthsAgo(39),
-        title: 'Door Installed',
-        detail: 'Clopay Premium Series 4050, 16x7 insulated steel.',
-      },
-      {
-        doorId: sarahDoor.id,
-        kind: 'SPRING_REPLACED',
-        occurredAt: monthsAgo(24),
-        title: 'Torsion Springs Replaced',
-        detail: '.225 x 2" x 27" pair, 10,000 cycle.',
-      },
-      {
-        doorId: sarahDoor.id,
-        kind: 'OPENER_REPLACED',
-        occurredAt: monthsAgo(18),
-        title: 'Opener Replaced',
-        detail: 'LiftMaster 87504-267 belt drive with battery backup.',
-      },
-      {
-        doorId: sarahDoor.id,
-        kind: 'TUNE_UP',
-        occurredAt: monthsAgo(11),
-        title: 'Annual Tune-Up',
-        detail: 'Balanced, lubricated, safety reverse tested.',
-      },
+      { doorId: sarahDoor.id, kind: 'INSTALLED', occurredAt: monthsAgo(39), title: 'Door Installed', detail: 'Clopay Premium Series 4050, 16x7 insulated steel.' },
+      { doorId: sarahDoor.id, kind: 'SPRING_REPLACED', occurredAt: monthsAgo(24), title: 'Torsion Springs Replaced', detail: '.225 x 2" x 27" pair, 10,000 cycle.' },
+      { doorId: sarahDoor.id, kind: 'OPENER_REPLACED', occurredAt: monthsAgo(18), title: 'Opener Replaced', detail: 'LiftMaster 87504-267 belt drive with battery backup.' },
+      { doorId: sarahDoor.id, kind: 'TUNE_UP', occurredAt: monthsAgo(11), title: 'Annual Tune-Up', detail: 'Balanced, lubricated, safety reverse tested.' },
     ],
   })
 
   const david = await prisma.customer.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       number: 1026,
       firstName: 'David',
       lastName: 'Carter',
@@ -522,13 +423,12 @@ async function main() {
       createdAt: monthsAgo(8),
       properties: {
         create: {
-          organizationId: org.id,
+          organizationId: orgId,
           nickname: 'Home',
           line1: '87 Ridgeline Ct',
           city: 'Matthews',
           state: 'NC',
           postalCode: '28105',
-          kind: 'RESIDENTIAL',
         },
       },
     },
@@ -538,16 +438,15 @@ async function main() {
 
   const davidDoor = await prisma.door.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       propertyId: davidProperty.id,
       number: 2044,
       nickname: 'Left Bay',
-      widthInches: 108, // 9'
+      widthInches: 108,
       heightInches: 84,
       panelCount: 4,
       manufacturer: 'Amarr',
       model: 'Stratford 3000',
-      operationType: 'SECTIONAL',
       material: 'STEEL',
       color: 'White',
       insulated: false,
@@ -559,7 +458,7 @@ async function main() {
 
   await prisma.springSystem.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       doorId: davidDoor.id,
       type: 'TORSION',
       shaftDiameter: '1"',
@@ -568,24 +467,8 @@ async function main() {
       installedAt: monthsAgo(62),
       springs: {
         create: [
-          {
-            wireSizeInches: 0.207,
-            insideDiameterInches: 1.75,
-            lengthInches: 24,
-            wind: 'LEFT_HAND',
-            quantity: 1,
-            cycleRating: 10000,
-            colorCode: 'Yellow',
-          },
-          {
-            wireSizeInches: 0.207,
-            insideDiameterInches: 1.75,
-            lengthInches: 24,
-            wind: 'RIGHT_HAND',
-            quantity: 1,
-            cycleRating: 10000,
-            colorCode: 'Yellow',
-          },
+          { wireSizeInches: 0.207, insideDiameterInches: 1.75, lengthInches: 24, wind: 'LEFT_HAND', quantity: 1, cycleRating: 10000, colorCode: 'Yellow' },
+          { wireSizeInches: 0.207, insideDiameterInches: 1.75, lengthInches: 24, wind: 'RIGHT_HAND', quantity: 1, cycleRating: 10000, colorCode: 'Yellow' },
         ],
       },
     },
@@ -593,7 +476,7 @@ async function main() {
 
   const mercer = await prisma.customer.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       number: 1029,
       firstName: 'Angela',
       lastName: 'Mercer',
@@ -605,7 +488,7 @@ async function main() {
       tags: ['commercial'],
       properties: {
         create: {
-          organizationId: org.id,
+          organizationId: orgId,
           nickname: 'Warehouse',
           line1: '1900 Distribution Way',
           city: 'Concord',
@@ -624,7 +507,7 @@ async function main() {
   for (let bay = 1; bay <= 4; bay += 1) {
     await prisma.door.create({
       data: {
-        organizationId: org.id,
+        organizationId: orgId,
         propertyId: mercerProperty.id,
         number: 2044 + bay,
         positionLabel: `Receiving Door ${bay}`,
@@ -632,7 +515,6 @@ async function main() {
         heightInches: 144,
         manufacturer: 'Wayne Dalton',
         model: '452',
-        operationType: 'SECTIONAL',
         material: 'STEEL',
         insulated: true,
         trackType: 'Vertical Lift',
@@ -641,15 +523,14 @@ async function main() {
     })
   }
 
-  const others = [
+  for (const [index, person] of [
     { first: 'Priya', last: 'Raman', phone: '(555) 388-2210', line1: '2201 Sharon Rd', city: 'Charlotte', zip: '28211' },
     { first: 'Bill', last: 'Okafor', phone: '(555) 660-1188', line1: '55 Foxcroft Ln', city: 'Pineville', zip: '28134' },
     { first: 'Janet', last: 'Holloway', phone: '(555) 419-7623', line1: '744 Old Mill Rd', city: 'Harrisburg', zip: '28075' },
-  ]
-  for (const [index, person] of others.entries()) {
+  ].entries()) {
     await prisma.customer.create({
       data: {
-        organizationId: org.id,
+        organizationId: orgId,
         number: 1030 + index,
         firstName: person.first,
         lastName: person.last,
@@ -658,7 +539,7 @@ async function main() {
         createdAt: monthsAgo(3 + index),
         properties: {
           create: {
-            organizationId: org.id,
+            organizationId: orgId,
             nickname: 'Home',
             line1: person.line1,
             city: person.city,
@@ -671,10 +552,12 @@ async function main() {
   }
 
   // --- Today's board -------------------------------------------------------
-  // Two jobs already finished this morning, one in progress, two ahead.
+  const jobTypes = await prisma.jobType.findMany({ where: { organizationId: orgId } })
+  const jobType = (slug: string) => jobTypes.find((type) => type.slug === slug)!
+
   const completedA = await prisma.job.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       number: 1040,
       customerId: david.id,
       propertyId: davidProperty.id,
@@ -695,7 +578,7 @@ async function main() {
 
   const completedB = await prisma.job.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       number: 1041,
       customerId: mercer.id,
       propertyId: mercerProperty.id,
@@ -715,7 +598,7 @@ async function main() {
 
   const brokenSpringJob = await prisma.job.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       number: 1043,
       customerId: sarah.id,
       propertyId: sarahProperty.id,
@@ -732,7 +615,7 @@ async function main() {
 
   await prisma.job.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       number: 1042,
       customerId: david.id,
       propertyId: davidProperty.id,
@@ -748,7 +631,7 @@ async function main() {
 
   await prisma.job.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       number: 1039,
       customerId: mercer.id,
       propertyId: mercerProperty.id,
@@ -761,8 +644,7 @@ async function main() {
     },
   })
 
-  // --- Inspection on the broken spring job --------------------------------
-  const { RESIDENTIAL_INSPECTION } = await import('../src/lib/inspection-template')
+  // --- Inspection already under way on the broken spring job ---------------
   const findings: Record<string, string> = {
     springs: 'FAILED',
     cables: 'GOOD',
@@ -773,12 +655,11 @@ async function main() {
     opener: 'GOOD',
     'bottom-seal': 'WORN',
     'photo-eyes': 'GOOD',
-    'auto-reverse': 'NOT_APPLICABLE',
   }
 
   await prisma.inspection.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       jobId: brokenSpringJob.id,
       doorId: sarahDoor.id,
       templateKey: 'residential-standard',
@@ -800,135 +681,10 @@ async function main() {
     },
   })
 
-  // --- Good / Better / Best estimate --------------------------------------
-  const taxRateBps = org.defaultTaxRateBps
-
-  const estimate = await prisma.estimate.create({
-    data: {
-      organizationId: org.id,
-      number: 1022,
-      jobId: brokenSpringJob.id,
-      customerId: sarah.id,
-      title: 'Spring Replacement',
-      status: 'SENT',
-      taxRateBps,
-      sentAt: todayAt(11, 5),
-      customerMessage:
-        'Torsion spring replacement with options for higher cycle life and a full tune-up.',
-      termsText:
-        'Work is warranted for 12 months on labor. Spring warranty as stated per option.',
-    },
-  })
-
-  async function addOption(input: {
-    tier: 'GOOD' | 'BETTER' | 'BEST'
-    name: string
-    description: string
-    recommended: boolean
-    sortOrder: number
-    lines: Array<{ sku: string; quantity: number; name?: string }>
-  }) {
-    const items = input.lines.map((line) => {
-      const itemId = lookup(line.sku)
-      const source = [...springRows].find((s) => s.sku === line.sku)
-      const part = PARTS.find((p) => p.sku === line.sku)
-      const labor = LABOR.find((l) => l.sku === line.sku)
-      const priceCents = source?.priceCents ?? part?.priceCents ?? labor?.priceCents ?? 0
-      const costCents = source?.costCents ?? part?.costCents ?? 0
-      const taxable = labor ? labor.taxable : true
-      return {
-        priceBookItemId: itemId,
-        kind: (labor
-          ? line.sku === 'SVC-CALL'
-            ? 'SERVICE_CALL'
-            : 'LABOR'
-          : 'PART') as never,
-        name: line.name ?? source?.name ?? part?.name ?? labor?.name ?? line.sku,
-        sku: line.sku,
-        quantity: line.quantity,
-        unitPriceCents: priceCents,
-        unitCostCents: costCents,
-        taxable,
-      }
-    })
-
-    const subtotalCents = items.reduce(
-      (sum, item) => sum + item.quantity * item.unitPriceCents,
-      0,
-    )
-    const taxableBase = items
-      .filter((item) => item.taxable)
-      .reduce((sum, item) => sum + item.quantity * item.unitPriceCents, 0)
-    const taxCents = Math.round((taxableBase * taxRateBps) / 10_000)
-
-    return prisma.estimateOption.create({
-      data: {
-        estimateId: estimate.id,
-        tier: input.tier,
-        name: input.name,
-        description: input.description,
-        isRecommended: input.recommended,
-        sortOrder: input.sortOrder,
-        subtotalCents,
-        discountCents: 0,
-        taxCents,
-        totalCents: subtotalCents + taxCents,
-        items: { create: items.map((item, index) => ({ ...item, sortOrder: index })) },
-      },
-    })
-  }
-
-  await addOption({
-    tier: 'GOOD',
-    name: 'Standard Spring Replacement',
-    description: 'Matched pair of 10,000-cycle torsion springs and replacement labor.',
-    recommended: false,
-    sortOrder: 0,
-    lines: [
-      { sku: 'TS-2250-200-270-L', quantity: 1 },
-      { sku: 'TS-2250-200-270-R', quantity: 1 },
-      { sku: 'LBR-SPRING', quantity: 1 },
-    ],
-  })
-
-  const better = await addOption({
-    tier: 'BETTER',
-    name: '25,000-Cycle Spring Replacement',
-    description: 'High-cycle spring pair — roughly two and a half times the service life.',
-    recommended: true,
-    sortOrder: 1,
-    lines: [
-      { sku: 'TS-2250-200-270-L25', quantity: 1 },
-      { sku: 'TS-2250-200-270-R25', quantity: 1 },
-      { sku: 'LBR-SPRING', quantity: 1 },
-    ],
-  })
-
-  await addOption({
-    tier: 'BEST',
-    name: 'High-Cycle Springs + Roller Upgrade',
-    description:
-      '25,000-cycle springs, ten 13-ball nylon rollers and a full safety tune-up with lubrication.',
-    recommended: false,
-    sortOrder: 2,
-    lines: [
-      { sku: 'TS-2250-200-270-L25', quantity: 1 },
-      { sku: 'TS-2250-200-270-R25', quantity: 1 },
-      { sku: 'RLR-NYL-13', quantity: 10 },
-      { sku: 'LBR-SPRING', quantity: 1 },
-      { sku: 'LBR-TUNEUP', quantity: 1 },
-    ],
-  })
-
-  await prisma.estimate.update({
-    where: { id: estimate.id },
-    data: { selectedOptionId: better.id },
-  })
-
-  // --- Invoices and payments ----------------------------------------------
+  // --- Completed work: invoices, payments, parts and the ledger ------------
   const paidInvoice = await prisma.invoice.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       number: 1007,
       jobId: completedA.id,
       customerId: david.id,
@@ -936,7 +692,7 @@ async function main() {
       issuedAt: todayAt(9, 15),
       dueAt: todayAt(9, 15),
       paidAt: todayAt(9, 20),
-      taxRateBps,
+      taxRateBps: 725,
       subtotalCents: 23200,
       taxCents: 1700,
       totalCents: 24900,
@@ -944,34 +700,9 @@ async function main() {
       balanceCents: 0,
       items: {
         create: [
-          {
-            kind: 'SERVICE_CALL',
-            name: 'Service Call',
-            sku: 'SVC-CALL',
-            quantity: 1,
-            unitPriceCents: 8900,
-            taxable: false,
-            sortOrder: 0,
-          },
-          {
-            kind: 'LABOR',
-            name: 'Full Safety Tune-Up & Lubrication',
-            sku: 'LBR-TUNEUP',
-            quantity: 1,
-            unitPriceCents: 8900,
-            taxable: false,
-            sortOrder: 1,
-          },
-          {
-            kind: 'PART',
-            name: '13-Ball Nylon Roller',
-            sku: 'RLR-NYL-13',
-            quantity: 10,
-            unitPriceCents: 1200,
-            unitCostCents: 320,
-            taxable: true,
-            sortOrder: 2,
-          },
+          { kind: 'SERVICE_CALL', name: 'Service Call', sku: 'SVC-CALL', quantity: 1, unitPriceCents: 8900, taxable: false, sortOrder: 0 },
+          { kind: 'LABOR', name: 'Full Safety Tune-Up & Lubrication', sku: 'LBR-TUNEUP', quantity: 1, unitPriceCents: 8900, taxable: false, sortOrder: 1 },
+          { kind: 'PART', name: '13-Ball Nylon Roller', sku: 'RLR-NYL-13', quantity: 10, unitPriceCents: 1200, unitCostCents: 320, taxable: true, sortOrder: 2 },
         ],
       },
     },
@@ -979,7 +710,7 @@ async function main() {
 
   await prisma.payment.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       invoiceId: paidInvoice.id,
       customerId: david.id,
       method: 'CARD',
@@ -987,7 +718,7 @@ async function main() {
       amountCents: 24900,
       feeCents: 750,
       receivedAt: todayAt(9, 20),
-      memo: 'Tapped on the technician phone.',
+      memo: 'Card taken on the technician phone.',
       cardBrand: 'visa',
       cardLast4: '4242',
     },
@@ -995,14 +726,14 @@ async function main() {
 
   await prisma.invoice.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       number: 1008,
       jobId: completedB.id,
       customerId: mercer.id,
       status: 'SENT',
       issuedAt: todayAt(10, 15),
       dueAt: daysAgo(-30),
-      taxRateBps,
+      taxRateBps: 725,
       subtotalCents: 46400,
       taxCents: 3400,
       totalCents: 49800,
@@ -1011,77 +742,13 @@ async function main() {
       notesToCustomer: 'Net 30 per the facilities agreement.',
       items: {
         create: [
-          {
-            kind: 'SERVICE_CALL',
-            name: 'Commercial Service Call',
-            sku: 'SVC-CALL',
-            quantity: 1,
-            unitPriceCents: 8900,
-            taxable: false,
-            sortOrder: 0,
-          },
-          {
-            kind: 'PART',
-            name: 'Lift Cable Set · 8 ft Door',
-            sku: 'CBL-8FT-SET',
-            quantity: 2,
-            unitPriceCents: 3800,
-            unitCostCents: 1050,
-            taxable: true,
-            sortOrder: 1,
-          },
-          {
-            kind: 'PART',
-            name: 'End Bearing Plate 6252',
-            sku: 'BRG-625',
-            quantity: 4,
-            unitPriceCents: 2400,
-            unitCostCents: 650,
-            taxable: true,
-            sortOrder: 2,
-          },
-          {
-            kind: 'LABOR',
-            name: 'Cable Repair Labor',
-            sku: 'LBR-CABLE',
-            quantity: 2,
-            unitPriceCents: 9900,
-            taxable: false,
-            sortOrder: 3,
-          },
+          { kind: 'SERVICE_CALL', name: 'Commercial Service Call', sku: 'SVC-CALL', quantity: 1, unitPriceCents: 8900, taxable: false, sortOrder: 0 },
+          { kind: 'PART', name: 'Lift Cable Set · 8 ft Door', sku: 'CBL-8FT-SET', quantity: 2, unitPriceCents: 3800, unitCostCents: 1050, taxable: true, sortOrder: 1 },
+          { kind: 'PART', name: 'End Bearing Plate 6252', sku: 'BRG-625', quantity: 4, unitPriceCents: 2400, unitCostCents: 650, taxable: true, sortOrder: 2 },
+          { kind: 'LABOR', name: 'Cable Repair Labor', sku: 'LBR-CABLE', quantity: 2, unitPriceCents: 9900, taxable: false, sortOrder: 3 },
         ],
       },
     },
-  })
-
-  // --- Parts used + the ledger movement they caused ------------------------
-  await prisma.jobPart.createMany({
-    data: [
-      {
-        jobId: completedA.id,
-        priceBookItemId: lookup('RLR-NYL-13'),
-        description: '13-Ball Nylon Roller',
-        sku: 'RLR-NYL-13',
-        quantity: 10,
-        unitCostCents: 320,
-      },
-      {
-        jobId: completedB.id,
-        priceBookItemId: lookup('CBL-8FT-SET'),
-        description: 'Lift Cable Set · 8 ft Door',
-        sku: 'CBL-8FT-SET',
-        quantity: 2,
-        unitCostCents: 1050,
-      },
-      {
-        jobId: completedB.id,
-        priceBookItemId: lookup('BRG-625'),
-        description: 'End Bearing Plate 6252',
-        sku: 'BRG-625',
-        quantity: 4,
-        unitCostCents: 650,
-      },
-    ],
   })
 
   for (const used of [
@@ -1089,13 +756,25 @@ async function main() {
     { sku: 'CBL-8FT-SET', quantity: 2, jobId: completedB.id, at: todayAt(10, 5) },
     { sku: 'BRG-625', quantity: 4, jobId: completedB.id, at: todayAt(10, 5) },
   ]) {
+    const item = bySku.get(used.sku)!
+    await prisma.jobPart.create({
+      data: {
+        jobId: used.jobId,
+        priceBookItemId: item.id,
+        description: item.name,
+        sku: item.sku,
+        quantity: new Prisma.Decimal(used.quantity),
+        unitCostCents: item.costCents,
+      },
+    })
     await prisma.inventoryTransaction.create({
       data: {
-        organizationId: org.id,
-        priceBookItemId: lookup(used.sku),
+        organizationId: orgId,
+        priceBookItemId: item.id,
         kind: 'CONSUMPTION',
         fromLocationId: truck1.id,
         quantity: used.quantity,
+        unitCostCents: item.costCents,
         jobId: used.jobId,
         actorId: mike.id,
         reason: 'Parts used on job',
@@ -1103,23 +782,18 @@ async function main() {
       },
     })
     await prisma.stockLevel.update({
-      where: {
-        locationId_priceBookItemId: {
-          locationId: truck1.id,
-          priceBookItemId: lookup(used.sku),
-        },
-      },
+      where: { locationId_priceBookItemId: { locationId: truck1.id, priceBookItemId: item.id } },
       data: { quantity: { decrement: used.quantity } },
     })
   }
 
-  // Historical spring usage, so "you used 7 in the last 30 days" has a basis.
+  // A month of spring usage, so restocking advice has something to learn from.
   for (let week = 1; week <= 4; week += 1) {
     for (const sku of ['TS-2250-200-270-L', 'TS-2250-200-270-R']) {
       await prisma.inventoryTransaction.create({
         data: {
-          organizationId: org.id,
-          priceBookItemId: lookup(sku),
+          organizationId: orgId,
+          priceBookItemId: idOf(sku),
           kind: 'CONSUMPTION',
           fromLocationId: truck1.id,
           quantity: 1,
@@ -1131,30 +805,9 @@ async function main() {
     }
   }
 
-  // --- Affiliate attribution ----------------------------------------------
-  const affiliate = await prisma.affiliate.create({
-    data: {
-      name: 'Garage Door Operators Community',
-      email: 'partner@gdocommunity.test',
-      code: 'GDOC20',
-      commissionPercent: 20,
-      notes: 'Skool community partner — 20% recurring.',
-    },
-  })
-
-  await prisma.referral.create({
-    data: {
-      organizationId: org.id,
-      affiliateId: affiliate.id,
-      code: affiliate.code,
-      landingUrl: 'https://garagedoorhq.test/?ref=GDOC20',
-      attributedAt: monthsAgo(14),
-    },
-  })
-
   await prisma.note.create({
     data: {
-      organizationId: org.id,
+      organizationId: orgId,
       jobId: brokenSpringJob.id,
       authorId: mike.id,
       body:
@@ -1162,10 +815,17 @@ async function main() {
     },
   })
 
+  const counts = {
+    catalog: await prisma.priceBookItem.count({ where: { organizationId: orgId } }),
+    packages: await prisma.priceBookPackage.count({ where: { organizationId: orgId } }),
+    remedies: await prisma.inspectionRemedy.count({ where: { organizationId: orgId } }),
+  }
+
   console.log(`
 Demo data ready.
 
-  Organization : ${org.name}
+  Organization : ${organization.name}
+  Catalog      : ${counts.catalog} items · ${counts.packages} packages · ${counts.remedies} inspection remedies
   Owner login  : mike@precisiongaragedoor.test
   Tech login   : tony@precisiongaragedoor.test
   Platform     : ${PLATFORM_ADMIN_EMAIL}

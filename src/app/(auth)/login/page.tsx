@@ -1,13 +1,15 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { getSession } from '@/lib/session'
+import { getAuthenticatedUser } from '@/lib/session'
 import { Logo } from '@/components/ui/logo'
 import { LoginForm } from './login-form'
 
 export const metadata: Metadata = { title: 'Sign in' }
 
 export default async function LoginPage() {
-  if (await getSession()) redirect('/today')
+  const user = await getAuthenticatedUser()
+  if (user) redirect(user.hasOrganization ? '/today' : '/onboarding/company')
 
   return (
     <div>
@@ -20,7 +22,10 @@ export default async function LoginPage() {
         <LoginForm />
       </div>
       <p className="mt-6 text-center text-sm text-navy-300">
-        $39.99/month. Everything included. No limits.
+        New here?{' '}
+        <Link href="/signup" className="font-semibold text-brand-400">
+          Create an account
+        </Link>
       </p>
     </div>
   )

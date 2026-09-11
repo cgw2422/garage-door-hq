@@ -1,0 +1,202 @@
+import type { InspectionItemStatus } from '@prisma/client'
+import { prisma } from '@/lib/db'
+import type { AppSession } from '@/lib/session'
+import { RESIDENTIAL_INSPECTION, isActionable } from '@/lib/inspection-template'
+
+export class InspectionError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'InspectionError'
+  }
+}
+
+/**
+ * Open the job's inspection, creating it with every template item on first use.
+ *
+ * Items are created up front rather than on demand so the checklist is a fixed
+ * list a technician can work down without the page reordering under their thumb.
+ */
+export async function startInspection(session: AppSession, jobId: string) {
+  const job = await session.db.job.findUnique({
+    where: { id: jobId },
+    select: { id: true, doorId: true },
+  })
+  if (!job) throw new InspectionError('Job not found')
+
+  const existing = await session.db.inspection.findFirst({
+    where: { jobId },
+    orderBy: { createdAt: 'desc' },
+  })
+  if (existing) return existing
+
+  return prisma.inspection.create({
+    data: {
+      organizationId: session.organizationId,
+      jobId,
+      doorId: job.doorId,
+      templateKey: 'residential-standard',
+      status: 'IN_PROGRESS',
+      items: {
+        create: RESIDENTIAL_INSPECTION.map((component, index) => ({
+          componentKey: component.key,
+          label: component.label,
+          sortOrder: index,
+        })),
+      },
+    },
+  })
+}
+
+/** Inspection items carry no tenant column; they are reached via the inspection. */
+async function loadOwnedItem(session: AppSession, itemId: string) {
+  const item = await prisma.inspectionItem.findUnique({
+    where: { id: itemId },
+    include: { inspection: { select: { id: true, jobId: true, organizationId: true } } },
+  })
+  if (!item || item.inspection.organizationId !== session.organizationId) {
+    throw new InspectionError('Inspection item not found')
+  }
+  return item
+}
+
+export async function setItemStatus(
+  session: AppSession,
+  params: { itemId: string; status: InspectionItemStatus },
+) {
+  const item = await loadOwnedItem(session, params.itemId)
+  return prisma.inspectionItem.update({
+    where: { id: item.id },
+    data: { status: params.status },
+  })
+}
+
+export async function setItemNote(
+  session: AppSession,
+  params: { itemId: string; note: string | null },
+) {
+  const item = await loadOwnedItem(session, params.itemId)
+  return prisma.inspectionItem.update({
+    where: { id: item.id },
+    data: { note: params.note?.trim() || null },
+  })
+}
+
+export async function completeInspection(
+  session: AppSession,
+  params: { inspectionId: string; summary?: string | null },
+) {
+  const inspection = await session.db.inspection.findUnique({
+    where: { id: params.inspectionId },
+    include: { items: true },
+  })
+  if (!inspection) throw new InspectionError('Inspection not found')
+
+  const findings = inspection.items.filter((item) => isActionable(item.status))
+
+  return session.db.inspection.update({
+    where: { id: params.inspectionId },
+    data: {
+      status: 'COMPLETED',
+      completedAt: new Date(),
+      summary:
+        params.summary?.trim() ||
+        (findings.length === 0
+          ? 'All checked components in good condition.'
+          : `${findings.length} item${findings.length === 1 ? '' : 's'} needing attention: ${findings
+              .map((item) => item.label)
+              .join(', ')}.`),
+    },
+  })
+}
+
+export interface RemedyOption {
+  id: string
+  name: string
+  description: string | null
+  /** Total price of everything the remedy adds, for the chip label. */
+  priceCents: number
+  tier: 'GOOD' | 'BETTER' | 'BEST' | 'STANDARD'
+  isPackage: boolean
+  /** Empty means "offer this for any actionable finding". */
+  forStatuses: InspectionItemStatus[]
+}
+
+/**
+ * The remedies offered for each component, priced.
+ *
+ * Loaded once for the whole checklist rather than per row, so marking twenty
+ * items does not mean twenty round trips.
+ */
+export async function loadRemedies(
+  session: AppSession,
+): Promise<Map<string, RemedyOption[]>> {
+  const remedies = await session.db.inspectionRemedy.findMany({
+    where: { isActive: true },
+    orderBy: [{ componentKey: 'asc' }, { sortOrder: 'asc' }],
+    include: {
+      priceBookItem: { select: { priceCents: true, isActive: true } },
+      package: {
+        select: {
+          defaultTier: true,
+          priceCents: true,
+          isActive: true,
+          items: {
+            select: {
+              quantity: true,
+              priceBookItem: { select: { priceCents: true } },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  const byComponent = new Map<string, RemedyOption[]>()
+
+  for (const remedy of remedies) {
+    if (remedy.package && !remedy.package.isActive) continue
+    if (remedy.priceBookItem && !remedy.priceBookItem.isActive) continue
+
+    const priceCents = remedy.package
+      ? (remedy.package.priceCents ??
+        remedy.package.items.reduce(
+          (sum, line) =>
+            sum + Math.round(Number(line.quantity.toString()) * line.priceBookItem.priceCents),
+          0,
+        ))
+      : Math.round(Number(remedy.quantity.toString()) * (remedy.priceBookItem?.priceCents ?? 0))
+
+    const bucket = byComponent.get(remedy.componentKey) ?? []
+    bucket.push({
+      id: remedy.id,
+      name: remedy.name,
+      description: remedy.description,
+      priceCents,
+      tier: remedy.package?.defaultTier ?? 'STANDARD',
+      isPackage: Boolean(remedy.packageId),
+      forStatuses: remedy.forStatuses,
+    })
+    byComponent.set(remedy.componentKey, bucket)
+  }
+
+  return byComponent
+}
+
+/** Remedies apply when the finding matches, or when the remedy names no statuses. */
+export function remediesFor(
+  all: Map<string, RemedyOption[]>,
+  componentKey: string,
+  status: InspectionItemStatus,
+): RemedyOption[] {
+  if (!isActionable(status)) return []
+  const options = all.get(componentKey) ?? []
+  return options.filter(
+    (option) => option.forStatuses.length === 0 || option.forStatuses.includes(status),
+  )
+}
+
+/** True when a finding has a full Good/Better/Best set ready to present. */
+export function hasTieredSet(options: RemedyOption[]): boolean {
+  const tiers = new Set(options.map((option) => option.tier))
+  return tiers.has('GOOD') && tiers.has('BETTER') && tiers.has('BEST')
+}

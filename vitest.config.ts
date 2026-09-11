@@ -5,8 +5,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
-    // Database-backed tests share one Postgres schema, so they run serially.
+    // Database-backed tests share one Postgres schema, so they run serially
+    // and start from a clean database.
     fileParallelism: false,
+    globalSetup: ['./tests/global-setup.ts'],
     testTimeout: 30_000,
   },
   resolve: {
