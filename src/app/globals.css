@@ -1,0 +1,158 @@
+@import 'tailwindcss';
+
+/* ==========================================================================
+   Garage Door HQ - design tokens
+   Derived from the approved branding and mobile UI concept.
+
+   Two surfaces, one palette:
+     - The marketing site and app chrome use the dark navy brand.
+     - The logged-in field application is light, because technicians read it
+       outdoors and in garages where a dark UI washes out.
+   ========================================================================== */
+
+@theme {
+  /* --- Brand: electric blue ------------------------------------------- */
+  --color-brand-50: #eaf4fe;
+  --color-brand-100: #d2e8fd;
+  --color-brand-200: #a8d2fa;
+  --color-brand-300: #6eb6f6;
+  --color-brand-400: #3c9df3;
+  --color-brand-500: #1b8cf0;
+  --color-brand-600: #0f74d1;
+  --color-brand-700: #0c5ca6;
+  --color-brand-800: #0b4b85;
+  --color-brand-900: #0c3f6e;
+
+  /* --- Brand: deep navy / charcoal ------------------------------------ */
+  --color-navy-50: #f2f5f9;
+  --color-navy-100: #e2e8f0;
+  --color-navy-200: #c3cede;
+  --color-navy-300: #93a5bd;
+  --color-navy-400: #5d7290;
+  --color-navy-500: #3d5573;
+  --color-navy-600: #2a3f59;
+  --color-navy-700: #1d2e44;
+  --color-navy-800: #14202f;
+  --color-navy-900: #0c1622;
+  --color-navy-950: #060d16;
+
+  /* --- Neutral application surface ------------------------------------ */
+  --color-ink: #0f172a;
+  --color-ink-muted: #55637a;
+  --color-ink-subtle: #7b8798;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #f4f6fa;
+  --color-hairline: #e4e9f1;
+  --color-hairline-strong: #d3dae6;
+
+  /* --- Semantic status ------------------------------------------------- */
+  --color-success-50: #eafaf0;
+  --color-success-100: #cdf2dc;
+  --color-success-500: #17a34a;
+  --color-success-600: #12833b;
+  --color-success-700: #0d6a30;
+
+  --color-warning-50: #fef6e7;
+  --color-warning-100: #fdeac5;
+  --color-warning-500: #e08c05;
+  --color-warning-600: #b87205;
+  --color-warning-700: #92590a;
+
+  --color-danger-50: #fdeeee;
+  --color-danger-100: #fbd8d8;
+  --color-danger-500: #d92d2d;
+  --color-danger-600: #b71f1f;
+  --color-danger-700: #911919;
+
+  /* --- Typography ------------------------------------------------------
+     No webfont fetch at build or runtime: the stack resolves to the host
+     platform's UI face, which is what makes the app feel native on a phone.
+     The display stack prefers a condensed industrial face when present. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Barlow Condensed', 'Oswald', 'Roboto Condensed',
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+
+  /* --- Radii ------------------------------------------------------------
+     Restrained on purpose. The concept is a square-shouldered industrial
+     product, not a rounded consumer toy. */
+  --radius-card: 0.875rem;
+  --radius-control: 0.625rem;
+  --radius-chip: 9999px;
+
+  /* --- Elevation --------------------------------------------------------
+     Cards sit on tint and hairline, not heavy drop shadows. */
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
+  --shadow-raised: 0 4px 12px rgb(15 23 42 / 0.08), 0 1px 3px rgb(15 23 42 / 0.06);
+  --shadow-sheet: 0 -8px 32px rgb(15 23 42 / 0.16);
+
+  /* --- Field ergonomics -------------------------------------------------
+     Minimum comfortable target for a gloved hand on a phone. */
+  --spacing-tap: 3rem;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: var(--color-surface-sunken);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    /* Full-height app feel with an iOS-safe bottom inset for the tab bar. */
+    min-height: 100dvh;
+    overscroll-behavior-y: none;
+  }
+
+  /* Field inputs must never be under 16px: iOS zooms the viewport below that. */
+  input,
+  select,
+  textarea {
+    font-size: max(1rem, 16px);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--color-brand-100);
+  }
+}
+
+@layer components {
+  /* Numbers that must be scannable at a glance: revenue, counts, totals. */
+  .num {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  .display {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+  }
+
+  /* Respects the home indicator on iPhone and the gesture bar on Android. */
+  .safe-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+  }
+
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

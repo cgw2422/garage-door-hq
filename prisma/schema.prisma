@@ -1,0 +1,1649 @@
+// Garage Door HQ - data model
+//
+// Conventions used throughout this schema:
+//
+// 1. MONEY is stored as integer minor units (cents) in `Int` columns suffixed
+//    `Cents`. Never floats. Rendering/parsing lives in src/lib/money.ts.
+// 2. MEASUREMENTS are `Decimal` with explicit precision. Spring wire sizes are
+//    four decimal places (.2253), lengths two.
+// 3. TENANCY: every organization-owned row carries `organizationId` and is
+//    indexed on it. Queries go through the tenant-scoped client in
+//    src/lib/tenancy.ts, which injects the filter server-side.
+// 4. DELETION: business records are archived (`archivedAt`), not destroyed.
+//    Financial records are never hard-deleted.
+// 5. HUMAN IDs: `number` columns hold per-organization readable sequences
+//    (Job #1043, INV-1008). UUIDs stay internal.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// PLATFORM + TENANCY
+// ---------------------------------------------------------------------------
+
+/// Platform-level role, deliberately separate from the per-organization role.
+/// A Garage Door HQ staff member is NOT an owner of any customer organization.
+enum PlatformRole {
+  NONE
+  PLATFORM_SUPPORT
+  PLATFORM_ADMIN
+}
+
+/// Role inside one garage door company.
+enum OrgRole {
+  OWNER
+  ADMIN
+  OFFICE
+  TECHNICIAN
+}
+
+enum CompanySize {
+  SOLO
+  SMALL_2_5
+  LARGE_6_PLUS
+}
+
+model User {
+  id           String       @id @default(uuid())
+  email        String       @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  phone        String?
+  avatarUrl    String?
+  platformRole PlatformRole @default(NONE)
+
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  /// Invalidates every issued session when bumped (password reset, forced logout).
+  sessionEpoch    Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships    Membership[]
+  passwordResets PasswordResetToken[]
+  assignedJobs   Job[]                  @relation("JobAssignee")
+  auditLogs      AuditLog[]
+  inventoryMoves InventoryTransaction[] @relation("InventoryActor")
+  homeLocations  InventoryLocation[]    @relation("LocationAssignee")
+  notes          Note[]
+  affiliate      Affiliate?
+
+  @@index([platformRole])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  /// SHA-256 of the token; the raw token only ever exists in the email.
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// A garage door company. The tenant boundary for every business record.
+model Organization {
+  id   String @id @default(uuid())
+  name String
+  slug String @unique
+
+  logoUrl      String?
+  phone        String?
+  email        String?
+  website      String?
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  country      String  @default("US")
+
+  timezone          String      @default("America/New_York")
+  currency          String      @default("USD")
+  /// Basis points, so 8.25% is 825. Avoids float tax math.
+  defaultTaxRateBps Int         @default(0)
+  companySize       CompanySize @default(SOLO)
+
+  /// Company-configurable business rules.
+  defaultPaymentTermsDays Int       @default(0)
+  googleReviewUrl         String?
+  laborCostPerHourCents   Int?
+  businessHours           Json?
+  onboardingCompletedAt   DateTime?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+
+  memberships           Membership[]
+  invitations           Invitation[]
+  customers             Customer[]
+  properties            Property[]
+  doors                 Door[]
+  openers               Opener[]
+  springSystems         SpringSystem[]
+  jobs                  Job[]
+  inspections           Inspection[]
+  estimates             Estimate[]
+  invoices              Invoice[]
+  payments              Payment[]
+  priceBookItems        PriceBookItem[]
+  packages              PriceBookPackage[]
+  inventoryLocations    InventoryLocation[]
+  stockLevels           StockLevel[]
+  inventoryTransactions InventoryTransaction[]
+  photos                Photo[]
+  notes                 Note[]
+  voiceNotes            VoiceNote[]
+  signatures            Signature[]
+  springMeasurements    SpringMeasurement[]
+  jobTypes              JobType[]
+  numberSequences       NumberSequence[]
+  auditLogs             AuditLog[]
+  subscription          Subscription?
+  referral              Referral?
+  reviewRequests        ReviewRequest[]
+  portalLinks           PortalLink[]
+  communications        CommunicationLog[]
+}
+
+model Membership {
+  id             String  @id @default(uuid())
+  userId         String
+  organizationId String
+  role           OrgRole @default(TECHNICIAN)
+  isActive       Boolean @default(true)
+
+  /// The truck this technician works out of; drives "My Truck".
+  defaultLocationId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization    Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  defaultLocation InventoryLocation? @relation(fields: [defaultLocationId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId, role])
+}
+
+model Invitation {
+  id             String    @id @default(uuid())
+  organizationId String
+  email          String
+  role           OrgRole   @default(TECHNICIAN)
+  tokenHash      String    @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+}
+
+// ---------------------------------------------------------------------------
+// CUSTOMER -> PROPERTY -> DOOR -> (OPENER | SPRING SYSTEM)
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id             String @id @default(uuid())
+  organizationId String
+  number         Int
+
+  firstName   String
+  lastName    String
+  companyName String?
+  phone       String?
+  altPhone    String?
+  email       String?
+
+  billingLine1      String?
+  billingLine2      String?
+  billingCity       String?
+  billingState      String?
+  billingPostalCode String?
+
+  tags          String[] @default([])
+  notesSummary  String?
+  customerSince DateTime @default(now())
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  properties     Property[]
+  jobs           Job[]
+  estimates      Estimate[]
+  invoices       Invoice[]
+  payments       Payment[]
+  photos         Photo[]
+  notes          Note[]
+  communications CommunicationLog[]
+  reviewRequests ReviewRequest[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId, lastName])
+  @@index([organizationId, phone])
+  @@index([organizationId, archivedAt])
+}
+
+enum PropertyKind {
+  RESIDENTIAL
+  COMMERCIAL
+}
+
+model Property {
+  id             String @id @default(uuid())
+  organizationId String
+  customerId     String
+
+  nickname   String?
+  line1      String
+  line2      String?
+  city       String
+  state      String
+  postalCode String
+  country    String  @default("US")
+
+  latitude  Decimal? @db.Decimal(9, 6)
+  longitude Decimal? @db.Decimal(9, 6)
+
+  kind               PropertyKind @default(RESIDENTIAL)
+  accessInstructions String?
+  gateInfo           String?
+  notesSummary       String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  doors        Door[]
+  jobs         Job[]
+  photos       Photo[]
+  notes        Note[]
+
+  @@index([organizationId, customerId])
+  @@index([organizationId, postalCode])
+}
+
+enum DoorMaterial {
+  STEEL
+  ALUMINUM
+  WOOD
+  WOOD_COMPOSITE
+  FIBERGLASS
+  VINYL
+  GLASS
+  ROLLING_STEEL
+  OTHER
+}
+
+enum DoorOperationType {
+  SECTIONAL
+  ONE_PIECE
+  ROLLING_STEEL
+  SLIDING
+  SWING_OUT
+  OTHER
+}
+
+/// The Door Passport. A permanent, first-class record of one physical door.
+/// Commercial buildings can carry dozens of these under one Property, which is
+/// why `positionLabel` (Bay 1, Receiving Door 3) exists alongside `nickname`.
+model Door {
+  id             String @id @default(uuid())
+  organizationId String
+  propertyId     String
+  /// Readable passport id: D-2043.
+  number         Int
+
+  nickname      String?
+  positionLabel String?
+
+  widthInches  Decimal? @db.Decimal(6, 2)
+  heightInches Decimal? @db.Decimal(6, 2)
+  panelCount   Int?
+
+  manufacturer  String?
+  model         String?
+  serialNumber  String?
+  operationType DoorOperationType @default(SECTIONAL)
+  style         String?
+  panelStyle    String?
+  material      DoorMaterial?
+  color         String?
+  windowStyle   String?
+
+  insulated Boolean?
+  rValue    Decimal? @db.Decimal(5, 2)
+
+  trackType         String?
+  trackRadiusInches Decimal? @db.Decimal(5, 2)
+  headroomInches    Decimal? @db.Decimal(5, 2)
+  /// Measured or manufacturer-stated door weight. Never inferred by the app -
+  /// spring sizing depends on this being a real measurement.
+  weightLbs         Decimal? @db.Decimal(7, 2)
+
+  installedAt         DateTime?
+  installedByNotes    String?
+  warrantyStartsAt    DateTime?
+  warrantyEndsAt      DateTime?
+  laborWarrantyEndsAt DateTime?
+
+  notesSummary String?
+  /// Stable token for the future QR sticker. Generated now so printed labels
+  /// never need reissuing when the scan endpoint ships.
+  qrToken      String  @unique @default(uuid())
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+
+  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property      Property            @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  openers       Opener[]
+  springSystems SpringSystem[]
+  jobs          Job[]
+  inspections   Inspection[]
+  photos        Photo[]
+  notes         Note[]
+  events        DoorEvent[]
+  measurements  SpringMeasurement[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId, propertyId])
+  @@index([organizationId, manufacturer])
+  @@index([organizationId, serialNumber])
+}
+
+enum DoorEventKind {
+  INSTALLED
+  SERVICE
+  REPAIR
+  INSPECTION
+  PART_REPLACED
+  SPRING_REPLACED
+  OPENER_REPLACED
+  TUNE_UP
+  NOTE
+}
+
+/// Chronological Door Passport history. Written by the job-completion pipeline
+/// so the passport timeline never has to be recomputed from joins.
+model DoorEvent {
+  id         String        @id @default(uuid())
+  doorId     String
+  kind       DoorEventKind
+  occurredAt DateTime
+  title      String
+  detail     String?
+  jobId      String?
+  metadata   Json?
+  createdAt  DateTime      @default(now())
+
+  door Door @relation(fields: [doorId], references: [id], onDelete: Cascade)
+  job  Job? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([doorId, occurredAt])
+}
+
+enum OpenerDriveType {
+  BELT
+  CHAIN
+  SCREW
+  DIRECT_DRIVE
+  WALL_MOUNT
+  JACKSHAFT
+  TROLLEY
+  OTHER
+}
+
+model Opener {
+  id             String @id @default(uuid())
+  organizationId String
+  doorId         String
+
+  manufacturer String?
+  model        String?
+  serialNumber String?
+  horsepower   String?
+  driveType    OpenerDriveType?
+  voltage      String?
+
+  batteryBackup Boolean?
+  wifiEnabled   Boolean?
+  smartHome     String?
+  remoteCount   Int?
+  keypadInfo    String?
+
+  manufacturedAt DateTime?
+  installedAt    DateTime?
+  warrantyEndsAt DateTime?
+
+  notesSummary String?
+  /// False once replaced; the superseded record stays for passport history.
+  isCurrent    Boolean   @default(true)
+  replacedAt   DateTime?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  door         Door         @relation(fields: [doorId], references: [id], onDelete: Cascade)
+  photos       Photo[]
+
+  @@index([organizationId, doorId, isCurrent])
+  @@index([organizationId, serialNumber])
+}
+
+enum SpringSystemType {
+  TORSION
+  EXTENSION
+  TORQUEMASTER
+  COMMERCIAL_TORSION
+  OTHER
+}
+
+enum WindDirection {
+  LEFT_HAND
+  RIGHT_HAND
+}
+
+/// One spring configuration on a door. Replacing springs creates a NEW system
+/// and marks the previous one `isCurrent = false`, so history is preserved.
+model SpringSystem {
+  id             String @id @default(uuid())
+  organizationId String
+  doorId         String
+
+  type          SpringSystemType @default(TORSION)
+  shaftDiameter String?
+  drumModel     String?
+  doorWeightLbs Decimal?         @db.Decimal(7, 2)
+  manufacturer  String?
+
+  installedAt    DateTime?
+  warrantyEndsAt DateTime?
+  notesSummary   String?
+
+  isCurrent  Boolean   @default(true)
+  replacedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  door         Door         @relation(fields: [doorId], references: [id], onDelete: Cascade)
+  springs      Spring[]
+
+  @@index([organizationId, doorId, isCurrent])
+}
+
+/// An individual spring within a system. Torsion doors normally have two with
+/// opposite wind; extension systems have a pair sized by weight.
+model Spring {
+  id             String @id @default(uuid())
+  springSystemId String
+
+  wireSizeInches       Decimal        @db.Decimal(6, 4)
+  insideDiameterInches Decimal        @db.Decimal(6, 3)
+  lengthInches         Decimal        @db.Decimal(7, 3)
+  wind                 WindDirection?
+  quantity             Int            @default(1)
+  cycleRating          Int?
+  colorCode            String?
+  /// Set when this spring came from stock, so usage reporting can tie a
+  /// physical spring back to the SKU that was consumed.
+  priceBookItemId      String?
+
+  createdAt DateTime @default(now())
+
+  springSystem  SpringSystem   @relation(fields: [springSystemId], references: [id], onDelete: Cascade)
+  priceBookItem PriceBookItem? @relation(fields: [priceBookItemId], references: [id], onDelete: SetNull)
+
+  @@index([springSystemId])
+  @@index([wireSizeInches, insideDiameterInches, lengthInches])
+}
+
+// ---------------------------------------------------------------------------
+// JOBS
+// ---------------------------------------------------------------------------
+
+enum JobStatus {
+  DRAFT
+  SCHEDULED
+  ON_MY_WAY
+  ARRIVED
+  IN_PROGRESS
+  WAITING
+  COMPLETED
+  CANCELLED
+}
+
+/// Job types ship as organization rows (seeded from a garage-door default set)
+/// rather than an enum, because companies must be able to add their own.
+model JobType {
+  id             String  @id @default(uuid())
+  organizationId String
+  name           String
+  slug           String
+  colorToken     String?
+  isSystem       Boolean @default(false)
+  isActive       Boolean @default(true)
+  sortOrder      Int     @default(0)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  jobs         Job[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, isActive])
+}
+
+model Job {
+  id             String @id @default(uuid())
+  organizationId String
+  /// Readable: Job #1043.
+  number         Int
+
+  customerId   String
+  propertyId   String
+  doorId       String?
+  jobTypeId    String?
+  assignedToId String?
+
+  status        JobStatus @default(SCHEDULED)
+  reportedIssue String?
+  internalNotes String?
+
+  scheduledStart DateTime?
+  scheduledEnd   DateTime?
+  onMyWayAt      DateTime?
+  arrivedAt      DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  cancelledAt    DateTime?
+  cancelReason   String?
+
+  /// Denormalized job costing, recomputed on completion and on any
+  /// payment/parts change. Cheap reads for the Money dashboard.
+  revenueCents       Int @default(0)
+  partsCostCents     Int @default(0)
+  laborCostCents     Int @default(0)
+  processingFeeCents Int @default(0)
+  otherCostCents     Int @default(0)
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  property     Property     @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  door         Door?        @relation(fields: [doorId], references: [id], onDelete: SetNull)
+  jobType      JobType?     @relation(fields: [jobTypeId], references: [id], onDelete: SetNull)
+  assignedTo   User?        @relation("JobAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  inspections    Inspection[]
+  estimates      Estimate[]
+  invoices       Invoice[]
+  parts          JobPart[]
+  photos         Photo[]
+  notes          Note[]
+  voiceNotes     VoiceNote[]
+  signatures     Signature[]
+  measurements   SpringMeasurement[]
+  doorEvents     DoorEvent[]
+  inventoryTxns  InventoryTransaction[]
+  reviewRequests ReviewRequest[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId, status, scheduledStart])
+  @@index([organizationId, assignedToId, scheduledStart])
+  @@index([organizationId, customerId])
+  @@index([organizationId, doorId])
+}
+
+/// Parts actually consumed on a job. Separate from estimate/invoice lines
+/// because what was quoted and what came off the truck are different facts.
+model JobPart {
+  id              String  @id @default(uuid())
+  jobId           String
+  priceBookItemId String?
+
+  description   String
+  sku           String?
+  quantity      Decimal @db.Decimal(10, 3)
+  unitCostCents Int     @default(0)
+
+  createdAt DateTime @default(now())
+
+  job           Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  priceBookItem PriceBookItem? @relation(fields: [priceBookItemId], references: [id], onDelete: SetNull)
+
+  @@index([jobId])
+}
+
+// ---------------------------------------------------------------------------
+// INSPECTIONS
+// ---------------------------------------------------------------------------
+
+enum InspectionStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum InspectionItemStatus {
+  NOT_CHECKED
+  GOOD
+  WORN
+  NEEDS_ATTENTION
+  FAILED
+  NOT_APPLICABLE
+}
+
+model Inspection {
+  id             String  @id @default(uuid())
+  organizationId String
+  jobId          String
+  doorId         String?
+
+  templateKey String           @default("residential-standard")
+  status      InspectionStatus @default(IN_PROGRESS)
+  summary     String?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  door         Door?            @relation(fields: [doorId], references: [id], onDelete: SetNull)
+  items        InspectionItem[]
+
+  @@index([organizationId, jobId])
+}
+
+model InspectionItem {
+  id           String @id @default(uuid())
+  inspectionId String
+
+  /// Stable key from the template (springs, cables, rollers...). Kept as a
+  /// string so templates can evolve without a migration per component.
+  componentKey   String
+  label          String
+  status         InspectionItemStatus @default(NOT_CHECKED)
+  note           String?
+  sortOrder      Int                  @default(0)
+  /// Set when the technician pushed this finding onto an estimate.
+  estimateItemId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  inspection Inspection  @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  photos     Photo[]
+  voiceNotes VoiceNote[]
+
+  @@unique([inspectionId, componentKey])
+  @@index([inspectionId, sortOrder])
+}
+
+// ---------------------------------------------------------------------------
+// PRICE BOOK  (also the parts master for inventory)
+// ---------------------------------------------------------------------------
+
+enum PriceBookCategory {
+  SPRINGS
+  OPENERS
+  ROLLERS
+  CABLES
+  DRUMS
+  BEARINGS
+  HINGES
+  SHAFTS
+  REMOTES
+  KEYPADS
+  PHOTO_EYES
+  WALL_CONTROLS
+  WEATHER_SEAL
+  PANELS
+  DOORS
+  HARDWARE
+  LABOR
+  SERVICE_CALL
+  PACKAGE
+  MISCELLANEOUS
+}
+
+/// One catalog entry. This is deliberately BOTH the price book row and the
+/// parts master: a torsion spring has one SKU, one cost and one price whether
+/// you are quoting it or counting it on a truck.
+model PriceBookItem {
+  id             String            @id @default(uuid())
+  organizationId String
+  category       PriceBookCategory
+  name           String
+  sku            String?
+  description    String?
+
+  costCents  Int     @default(0)
+  priceCents Int     @default(0)
+  taxable    Boolean @default(true)
+  unit       String  @default("ea")
+
+  trackInventory Boolean @default(false)
+  supplier       String?
+  supplierPartNo String?
+  imageUrl       String?
+  isActive       Boolean @default(true)
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+
+  organization  Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  springSpec    SpringSpec?
+  stockLevels   StockLevel[]
+  transactions  InventoryTransaction[]
+  estimateItems EstimateItem[]
+  invoiceItems  InvoiceItem[]
+  jobParts      JobPart[]
+  packageItems  PriceBookPackageItem[]
+  springs       Spring[]
+
+  @@unique([organizationId, sku])
+  @@index([organizationId, category, isActive])
+  @@index([organizationId, name])
+}
+
+/// Typed spring attributes hung off a catalog item. Kept in its own table and
+/// indexed so "find me a .225 x 2 x 27 left hand" is an indexed lookup rather
+/// than parsing free-text SKU strings.
+model SpringSpec {
+  priceBookItemId String @id
+
+  type                 SpringSystemType @default(TORSION)
+  wireSizeInches       Decimal          @db.Decimal(6, 4)
+  insideDiameterInches Decimal          @db.Decimal(6, 3)
+  lengthInches         Decimal          @db.Decimal(7, 3)
+  wind                 WindDirection?
+  cycleRating          Int?
+  colorCode            String?
+
+  priceBookItem PriceBookItem @relation(fields: [priceBookItemId], references: [id], onDelete: Cascade)
+
+  @@index([wireSizeInches, insideDiameterInches, lengthInches, wind])
+  @@index([cycleRating])
+}
+
+model PriceBookPackage {
+  id             String  @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  /// When null, the package price is the sum of its components.
+  priceCents     Int?
+  isActive       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items        PriceBookPackageItem[]
+
+  @@index([organizationId, isActive])
+}
+
+model PriceBookPackageItem {
+  id              String  @id @default(uuid())
+  packageId       String
+  priceBookItemId String
+  quantity        Decimal @default(1) @db.Decimal(10, 3)
+
+  package       PriceBookPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  priceBookItem PriceBookItem    @relation(fields: [priceBookItemId], references: [id], onDelete: Restrict)
+
+  @@unique([packageId, priceBookItemId])
+}
+
+// ---------------------------------------------------------------------------
+// INVENTORY  (append-only ledger + materialized stock levels)
+// ---------------------------------------------------------------------------
+
+enum InventoryLocationKind {
+  WAREHOUSE
+  TRUCK
+  SHOP
+  OTHER
+}
+
+model InventoryLocation {
+  id             String                @id @default(uuid())
+  organizationId String
+  name           String
+  kind           InventoryLocationKind @default(TRUCK)
+  /// Technician this truck belongs to; powers "My Truck" without asking.
+  assignedUserId String?
+  isActive       Boolean               @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedUser User?                  @relation("LocationAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  stockLevels  StockLevel[]
+  memberships  Membership[]
+  txnsFrom     InventoryTransaction[] @relation("TxnFromLocation")
+  txnsTo       InventoryTransaction[] @relation("TxnToLocation")
+
+  @@index([organizationId, isActive])
+  @@index([organizationId, assignedUserId])
+}
+
+/// Materialized quantity for fast reads. Always written inside the same
+/// database transaction as the ledger rows that moved it, never on its own.
+model StockLevel {
+  id              String @id @default(uuid())
+  organizationId  String
+  locationId      String
+  priceBookItemId String
+
+  quantity    Decimal @default(0) @db.Decimal(12, 3)
+  minQuantity Decimal @default(0) @db.Decimal(12, 3)
+  binLocation String?
+
+  updatedAt DateTime @updatedAt
+
+  organization  Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  location      InventoryLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  priceBookItem PriceBookItem     @relation(fields: [priceBookItemId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, priceBookItemId])
+  @@index([organizationId, locationId])
+  @@index([organizationId, priceBookItemId])
+}
+
+enum InventoryTxnKind {
+  RECEIPT
+  CONSUMPTION
+  TRANSFER
+  ADJUSTMENT
+  RETURN
+  COUNT
+}
+
+/// Append-only. Rows are never updated or deleted; a mistake is corrected by
+/// posting a compensating transaction so the audit trail stays intact.
+model InventoryTransaction {
+  id              String           @id @default(uuid())
+  organizationId  String
+  priceBookItemId String
+  kind            InventoryTxnKind
+
+  fromLocationId String?
+  toLocationId   String?
+  /// Always positive. Direction is expressed by from/to, not by sign.
+  quantity       Decimal @db.Decimal(12, 3)
+  unitCostCents  Int     @default(0)
+
+  jobId     String?
+  actorId   String?
+  reason    String?
+  reference String?
+
+  createdAt DateTime @default(now())
+
+  organization  Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  priceBookItem PriceBookItem      @relation(fields: [priceBookItemId], references: [id], onDelete: Restrict)
+  fromLocation  InventoryLocation? @relation("TxnFromLocation", fields: [fromLocationId], references: [id], onDelete: SetNull)
+  toLocation    InventoryLocation? @relation("TxnToLocation", fields: [toLocationId], references: [id], onDelete: SetNull)
+  job           Job?               @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  actor         User?              @relation("InventoryActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, priceBookItemId, createdAt])
+  @@index([organizationId, jobId])
+  @@index([organizationId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// ESTIMATES  (Good / Better / Best, versioned so signatures stay honest)
+// ---------------------------------------------------------------------------
+
+enum EstimateStatus {
+  DRAFT
+  SENT
+  VIEWED
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  VOID
+}
+
+enum EstimateTier {
+  GOOD
+  BETTER
+  BEST
+  STANDARD
+}
+
+model Estimate {
+  id             String @id @default(uuid())
+  organizationId String
+  number         Int
+
+  jobId      String?
+  customerId String
+  title      String?
+  status     EstimateStatus @default(DRAFT)
+
+  selectedOptionId String?   @unique
+  taxRateBps       Int       @default(0)
+  expiresAt        DateTime?
+  customerMessage  String?
+  termsText        String?
+
+  sentAt     DateTime?
+  viewedAt   DateTime?
+  acceptedAt DateTime?
+  declinedAt DateTime?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job            Job?              @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  customer       Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  options        EstimateOption[]  @relation("EstimateOptions")
+  selectedOption EstimateOption?   @relation("EstimateSelectedOption", fields: [selectedOptionId], references: [id], onDelete: SetNull)
+  versions       EstimateVersion[]
+  signatures     Signature[]
+  photos         Photo[]
+  invoices       Invoice[]
+  portalLinks    PortalLink[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId, status])
+  @@index([organizationId, customerId])
+  @@index([organizationId, jobId])
+}
+
+model EstimateOption {
+  id            String       @id @default(uuid())
+  estimateId    String
+  tier          EstimateTier
+  name          String
+  description   String?
+  isRecommended Boolean      @default(false)
+  sortOrder     Int          @default(0)
+
+  /// Totals are stored, not derived at read time, so an accepted option can
+  /// never change value because a price book entry was edited later.
+  subtotalCents Int @default(0)
+  discountCents Int @default(0)
+  taxCents      Int @default(0)
+  totalCents    Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  estimate   Estimate       @relation("EstimateOptions", fields: [estimateId], references: [id], onDelete: Cascade)
+  selectedBy Estimate?      @relation("EstimateSelectedOption")
+  items      EstimateItem[]
+
+  @@index([estimateId, sortOrder])
+}
+
+enum LineItemKind {
+  PART
+  LABOR
+  SERVICE_CALL
+  DISCOUNT
+  FEE
+  CUSTOM
+}
+
+model EstimateItem {
+  id       String @id @default(uuid())
+  optionId String
+
+  priceBookItemId String?
+  kind            LineItemKind @default(PART)
+  /// Snapshot of name/description/price at the moment the line was added.
+  /// The price book FK is for reporting only; it is never re-read for money.
+  name            String
+  description     String?
+  sku             String?
+  quantity        Decimal      @default(1) @db.Decimal(10, 3)
+  unitPriceCents  Int          @default(0)
+  unitCostCents   Int          @default(0)
+  taxable         Boolean      @default(true)
+  sortOrder       Int          @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  option        EstimateOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  priceBookItem PriceBookItem? @relation(fields: [priceBookItemId], references: [id], onDelete: SetNull)
+
+  @@index([optionId, sortOrder])
+}
+
+/// Immutable snapshot of an estimate at the moment it was sent or signed.
+/// A signature points at a version + content hash, so "the customer approved
+/// something different" is provable rather than a matter of trust.
+model EstimateVersion {
+  id          String   @id @default(uuid())
+  estimateId  String
+  version     Int
+  /// Full denormalized document: options, items, totals, company details.
+  snapshot    Json
+  /// SHA-256 over the canonical JSON encoding of `snapshot`.
+  contentHash String
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  estimate   Estimate    @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  signatures Signature[]
+
+  @@unique([estimateId, version])
+  @@index([contentHash])
+}
+
+// ---------------------------------------------------------------------------
+// INVOICES + PAYMENTS
+// ---------------------------------------------------------------------------
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIAL
+  PAID
+  PAST_DUE
+  VOID
+}
+
+model Invoice {
+  id             String @id @default(uuid())
+  organizationId String
+  number         Int
+
+  jobId      String?
+  estimateId String?
+  customerId String
+
+  status   InvoiceStatus @default(DRAFT)
+  issuedAt DateTime?
+  dueAt    DateTime?
+  paidAt   DateTime?
+  voidedAt DateTime?
+
+  taxRateBps    Int @default(0)
+  subtotalCents Int @default(0)
+  discountCents Int @default(0)
+  taxCents      Int @default(0)
+  totalCents    Int @default(0)
+  paidCents     Int @default(0)
+  /// Persisted rather than computed so "past due / outstanding" queries are
+  /// index-friendly. Always totalCents - paidCents.
+  balanceCents  Int @default(0)
+
+  notesToCustomer String?
+  termsText       String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job?          @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  estimate     Estimate?     @relation(fields: [estimateId], references: [id], onDelete: SetNull)
+  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  items        InvoiceItem[]
+  payments     Payment[]
+  signatures   Signature[]
+  photos       Photo[]
+  portalLinks  PortalLink[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId, status, dueAt])
+  @@index([organizationId, customerId])
+}
+
+model InvoiceItem {
+  id        String @id @default(uuid())
+  invoiceId String
+
+  priceBookItemId String?
+  kind            LineItemKind @default(PART)
+  name            String
+  description     String?
+  sku             String?
+  quantity        Decimal      @default(1) @db.Decimal(10, 3)
+  unitPriceCents  Int          @default(0)
+  unitCostCents   Int          @default(0)
+  taxable         Boolean      @default(true)
+  sortOrder       Int          @default(0)
+
+  invoice       Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  priceBookItem PriceBookItem? @relation(fields: [priceBookItemId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId, sortOrder])
+}
+
+enum PaymentMethod {
+  CARD
+  ACH
+  CASH
+  CHECK
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+/// No raw card data, ever. Card payments will carry a provider token and the
+/// last four digits returned by the processor - nothing else.
+model Payment {
+  id             String  @id @default(uuid())
+  organizationId String
+  invoiceId      String?
+  customerId     String
+
+  method        PaymentMethod
+  status        PaymentStatus @default(SUCCEEDED)
+  amountCents   Int
+  feeCents      Int           @default(0)
+  refundedCents Int           @default(0)
+
+  receivedAt DateTime @default(now())
+  reference  String?
+  memo       String?
+
+  /// Set only by the (future) payment provider integration.
+  providerName       String?
+  providerPaymentId  String?
+  providerCustomerId String?
+  cardBrand          String?
+  cardLast4          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoice      Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  @@unique([providerName, providerPaymentId])
+  @@index([organizationId, receivedAt])
+  @@index([organizationId, invoiceId])
+}
+
+// ---------------------------------------------------------------------------
+// SIGNATURES, MEDIA, NOTES
+// ---------------------------------------------------------------------------
+
+enum SignatureKind {
+  ESTIMATE_APPROVAL
+  WORK_AUTHORIZATION
+  JOB_COMPLETION
+  TERMS_ACCEPTANCE
+}
+
+model Signature {
+  id             String        @id @default(uuid())
+  organizationId String
+  kind           SignatureKind
+
+  signerName String
+  /// Data URL / storage key of the drawn signature image.
+  imageKey   String
+  signedAt   DateTime @default(now())
+  ipAddress  String?
+  userAgent  String?
+
+  estimateId        String?
+  estimateVersionId String?
+  invoiceId         String?
+  jobId             String?
+  /// Hash of the exact document text the signer saw.
+  documentHash      String?
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  estimate        Estimate?        @relation(fields: [estimateId], references: [id], onDelete: SetNull)
+  estimateVersion EstimateVersion? @relation(fields: [estimateVersionId], references: [id], onDelete: SetNull)
+  invoice         Invoice?         @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  job             Job?             @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, kind])
+  @@index([estimateId])
+}
+
+enum PhotoKind {
+  BEFORE
+  AFTER
+  DAMAGE
+  EQUIPMENT
+  SERIAL_TAG
+  INSPECTION
+  OTHER
+}
+
+/// Explicit nullable foreign keys instead of a polymorphic (type, id) pair:
+/// the database keeps referential integrity and cascade rules stay honest.
+model Photo {
+  id             String    @id @default(uuid())
+  organizationId String
+  kind           PhotoKind @default(OTHER)
+
+  storageKey  String
+  caption     String?
+  width       Int?
+  height      Int?
+  byteSize    Int?
+  contentType String?
+
+  jobId            String?
+  customerId       String?
+  propertyId       String?
+  doorId           String?
+  openerId         String?
+  inspectionItemId String?
+  estimateId       String?
+  invoiceId        String?
+
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job            Job?            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  customer       Customer?       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  property       Property?       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  door           Door?           @relation(fields: [doorId], references: [id], onDelete: Cascade)
+  opener         Opener?         @relation(fields: [openerId], references: [id], onDelete: Cascade)
+  inspectionItem InspectionItem? @relation(fields: [inspectionItemId], references: [id], onDelete: Cascade)
+  estimate       Estimate?       @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  invoice        Invoice?        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, jobId])
+  @@index([organizationId, doorId])
+  @@index([organizationId, createdAt])
+}
+
+model VoiceNote {
+  id             String @id @default(uuid())
+  organizationId String
+
+  storageKey    String
+  durationMs    Int?
+  contentType   String?
+  /// Populated later by a transcription provider. Nothing fabricates it now.
+  transcript    String?
+  transcribedAt DateTime?
+
+  jobId            String?
+  inspectionItemId String?
+
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job            Job?            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  inspectionItem InspectionItem? @relation(fields: [inspectionItemId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, jobId])
+}
+
+model Note {
+  id             String  @id @default(uuid())
+  organizationId String
+  body           String
+  authorId       String?
+
+  jobId      String?
+  customerId String?
+  propertyId String?
+  doorId     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author       User?        @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  job          Job?         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  customer     Customer?    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  property     Property?    @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  door         Door?        @relation(fields: [doorId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, jobId])
+  @@index([organizationId, customerId])
+}
+
+/// A spring measurement taken in the field. Saved on its own so a technician
+/// can record what is on the door before deciding what to sell.
+model SpringMeasurement {
+  id             String  @id @default(uuid())
+  organizationId String
+  jobId          String?
+  doorId         String?
+
+  type                 SpringSystemType @default(TORSION)
+  wireSizeInches       Decimal          @db.Decimal(6, 4)
+  insideDiameterInches Decimal          @db.Decimal(6, 3)
+  lengthInches         Decimal          @db.Decimal(7, 3)
+  wind                 WindDirection?
+  quantity             Int              @default(2)
+
+  doorWeightLbs       Decimal? @db.Decimal(7, 2)
+  doorHeightInches    Decimal? @db.Decimal(6, 2)
+  drumModel           String?
+  shaftDiameter       String?
+  existingCycleRating Int?
+  notes               String?
+
+  /// The catalog item the technician settled on, if any.
+  matchedItemId String?
+
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job?         @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  door         Door?        @relation(fields: [doorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, jobId])
+  @@index([organizationId, doorId])
+}
+
+// ---------------------------------------------------------------------------
+// CUSTOMER COMMUNICATION + PORTAL
+// ---------------------------------------------------------------------------
+
+enum CommunicationChannel {
+  SMS
+  EMAIL
+  PHONE
+  IN_PERSON
+  PUSH
+}
+
+enum CommunicationDirection {
+  OUTBOUND
+  INBOUND
+}
+
+enum CommunicationStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  RECEIVED
+}
+
+/// History only for now. No provider is wired up; nothing here pretends a
+/// message was delivered unless a real provider reported it.
+model CommunicationLog {
+  id             String  @id @default(uuid())
+  organizationId String
+  customerId     String?
+
+  channel   CommunicationChannel
+  direction CommunicationDirection @default(OUTBOUND)
+  status    CommunicationStatus    @default(QUEUED)
+
+  templateKey       String?
+  subject           String?
+  body              String
+  toAddress         String?
+  providerMessageId String?
+  errorMessage      String?
+
+  jobId      String?
+  estimateId String?
+  invoiceId  String?
+
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, customerId, createdAt])
+}
+
+model ReviewRequest {
+  id             String  @id @default(uuid())
+  organizationId String
+  customerId     String
+  jobId          String?
+
+  status       CommunicationStatus @default(QUEUED)
+  reviewUrl    String
+  scheduledFor DateTime?
+  sentAt       DateTime?
+  clickedAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  job          Job?         @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+}
+
+enum PortalLinkTarget {
+  ESTIMATE
+  INVOICE
+}
+
+/// Account-free customer access. The raw token is emailed/texted once; only
+/// its hash is stored, and it expires.
+model PortalLink {
+  id             String           @id @default(uuid())
+  organizationId String
+  target         PortalLinkTarget
+  estimateId     String?
+  invoiceId      String?
+
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  lastViewedAt DateTime?
+  viewCount    Int       @default(0)
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  estimate     Estimate?    @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  invoice      Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// SUBSCRIPTION + AFFILIATE
+// ---------------------------------------------------------------------------
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  COMPLIMENTARY
+  /// Subscription ended; the account is read-only but the data is intact.
+  EXPIRED
+}
+
+/// One customer-facing plan at $39.99/month. The columns here exist so
+/// discounts, comps and grandfathered pricing never need a schema change -
+/// not so a feature matrix can be built on top of them.
+model Subscription {
+  id             String             @id @default(uuid())
+  organizationId String             @unique
+  status         SubscriptionStatus @default(TRIALING)
+
+  planCode        String  @default("standard-monthly")
+  priceCents      Int     @default(3999)
+  currency        String  @default("USD")
+  discountPercent Int?
+  discountCode    String?
+
+  trialEndsAt        DateTime?
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean   @default(false)
+  cancelledAt        DateTime?
+  complimentaryUntil DateTime?
+  /// How long data is retained after the subscription lapses before any
+  /// destructive action is even considered. Never auto-deletes today.
+  dataRetentionUntil DateTime?
+
+  providerName           String?
+  providerCustomerId     String?
+  providerSubscriptionId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  commissions  Commission[]
+
+  @@index([status])
+}
+
+model Affiliate {
+  id     String  @id @default(uuid())
+  userId String? @unique
+
+  name              String
+  email             String  @unique
+  code              String  @unique
+  commissionPercent Int     @default(20)
+  isActive          Boolean @default(true)
+  notes             String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  referrals   Referral[]
+  commissions Commission[]
+}
+
+/// Attribution captured at signup and never rewritten by later traffic.
+model Referral {
+  id             String @id @default(uuid())
+  organizationId String @unique
+  affiliateId    String
+  code           String
+
+  landingUrl   String?
+  attributedAt DateTime @default(now())
+
+  affiliate    Affiliate    @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([affiliateId])
+}
+
+enum CommissionStatus {
+  PENDING
+  APPROVED
+  PAID
+  VOID
+}
+
+model Commission {
+  id             String           @id @default(uuid())
+  affiliateId    String
+  subscriptionId String
+  status         CommissionStatus @default(PENDING)
+
+  amountCents Int
+  periodStart DateTime
+  periodEnd   DateTime
+  paidAt      DateTime?
+
+  createdAt DateTime @default(now())
+
+  affiliate    Affiliate    @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, periodStart])
+  @@index([affiliateId, status])
+}
+
+// ---------------------------------------------------------------------------
+// NUMBERING + AUDIT
+// ---------------------------------------------------------------------------
+
+enum SequenceEntity {
+  JOB
+  ESTIMATE
+  INVOICE
+  DOOR
+  CUSTOMER
+}
+
+/// Per-organization readable counters. Incremented inside the same
+/// transaction as the row it names, with a row lock, so two technicians
+/// creating jobs at once cannot collide.
+model NumberSequence {
+  organizationId String
+  entity         SequenceEntity
+  nextValue      Int            @default(1000)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@id([organizationId, entity])
+}
+
+model AuditLog {
+  id             String  @id @default(uuid())
+  /// Null for platform-level actions that are not scoped to one tenant.
+  organizationId String?
+  actorUserId    String?
+
+  action     String
+  entityType String
+  entityId   String?
+  /// Only the fields that changed, never whole rows, and never secrets.
+  before     Json?
+  after      Json?
+
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  actor        User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId])
+  @@index([actorUserId, createdAt])
+}

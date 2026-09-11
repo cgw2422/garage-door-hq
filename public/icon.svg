@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Garage Door HQ">
+  <rect width="512" height="512" rx="96" fill="#0C1622"/>
+  <g stroke="#1B8CF0" stroke-width="30" stroke-linejoin="round" stroke-linecap="round" fill="none">
+    <path d="M76 214 256 84l180 130v228a8 8 0 0 1-8 8H84a8 8 0 0 1-8-8V214Z"/>
+    <path d="M142 268h228M142 326h228M142 384h228"/>
+  </g>
+</svg>
