@@ -84,6 +84,14 @@ export default async function CustomerProfilePage({
         title={displayName}
         subtitle={customer.companyName ? `${customer.firstName} ${customer.lastName}` : undefined}
         backHref="/customers"
+        action={
+          <Link
+            href={`/customers/${customer.id}/edit`}
+            className="text-[0.8125rem] font-semibold text-brand-600"
+          >
+            Edit
+          </Link>
+        }
       />
       <PageBody>
         <Card padded={false}>

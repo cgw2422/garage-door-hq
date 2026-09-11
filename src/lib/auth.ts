@@ -3,6 +3,7 @@ import Credentials from 'next-auth/providers/credentials'
 import { z } from 'zod'
 import { prisma } from './db'
 import { verifyPassword } from './password'
+import { clientAddress, consumeRateLimit } from './rate-limit'
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -30,7 +31,28 @@ declare module 'next-auth' {
  */
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
-  session: { strategy: 'jwt', maxAge: 60 * 60 * 24 * 30 },
+  session: {
+    strategy: 'jwt',
+    // Field work; a month between sign-ins is the realistic expectation.
+    maxAge: 60 * 60 * 24 * 30,
+    // Re-issue at most daily so a revoked account is not carried indefinitely
+    // by a token that keeps refreshing itself.
+    updateAge: 60 * 60 * 24,
+  },
+  cookies: {
+    sessionToken: {
+      name:
+        process.env.NODE_ENV === 'production'
+          ? '__Secure-authjs.session-token'
+          : 'authjs.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+  },
   pages: { signIn: '/login' },
   providers: [
     Credentials({
@@ -39,9 +61,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const parsed = credentialsSchema.safeParse(raw)
         if (!parsed.success) return null
 
-        const user = await prisma.user.findUnique({
-          where: { email: parsed.data.email.toLowerCase().trim() },
-        })
+        const email = parsed.data.email.toLowerCase().trim()
+
+        // Rate limit on both the address and the account. The address stops a
+        // spray across many accounts; the account stops a spray from many
+        // addresses at one account.
+        const address = await clientAddress()
+        const [byAddress, byAccount] = await Promise.all([
+          consumeRateLimit('login', `ip:${address}`),
+          consumeRateLimit('login', `email:${email}`),
+        ])
+        if (!byAddress.ok || !byAccount.ok) return null
+
+        const user = await prisma.user.findUnique({ where: { email } })
         if (!user) {
           // Spend comparable time on a missing account so response timing does
           // not reveal which emails exist.

@@ -10,6 +10,9 @@ import { PageBody, PageHeader } from '@/components/app/page-header'
 import { Card, CardHeader, Divider } from '@/components/ui/card'
 import { InvoiceStatusChip } from '@/components/ui/status'
 import { PaymentPanel } from './payment-panel'
+import { ShareLink } from '@/components/app/share-link'
+import { activeLinkFor } from '@/server/portal/service'
+import { DocumentIcon } from '@/components/ui/icons'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,6 +41,7 @@ export default async function InvoicePage({
   const { id } = await params
   const { collect } = await searchParams
 
+  const portalLink = await activeLinkFor(session, { invoiceId: id })
   const invoice = await session.db.invoice.findUnique({
     where: { id },
     include: {
@@ -177,6 +181,34 @@ export default async function InvoicePage({
             </ul>
           </Card>
         ) : null}
+
+        <ShareLink
+          timezone={session.timezone}
+          target="INVOICE"
+          documentId={invoice.id}
+          existingLink={
+            portalLink
+              ? {
+                  id: portalLink.id,
+                  expiresAt: portalLink.expiresAt.toISOString(),
+                  viewCount: portalLink.viewCount,
+                  lastViewedAt: portalLink.lastViewedAt?.toISOString() ?? null,
+                }
+              : null
+          }
+          revalidate={`/invoices/${invoice.id}`}
+          label="Send to the customer"
+        />
+
+        <a
+          href={`/api/documents/invoices/${invoice.id}/pdf`}
+          target="_blank"
+          rel="noreferrer"
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-[--radius-control] border border-hairline-strong bg-surface font-semibold text-ink active:bg-surface-sunken"
+        >
+          <DocumentIcon className="h-[1.15em] w-[1.15em]" />
+          Invoice PDF
+        </a>
 
         <PaymentPanel
           invoiceId={invoice.id}

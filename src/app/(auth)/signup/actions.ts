@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { signIn } from '@/lib/auth'
 import { PASSWORD_MIN_LENGTH } from '@/lib/password-policy'
 import { failure, parseForm, type FormState } from '@/lib/form'
+import { clientAddress, enforceRateLimit } from '@/lib/rate-limit'
 import { registerOwner } from '@/server/organizations/onboarding'
 
 const schema = z.object({
@@ -21,6 +22,14 @@ const schema = z.object({
 export async function signUp(_prev: FormState, formData: FormData): Promise<FormState> {
   const parsed = parseForm(schema, formData)
   if (!parsed.ok) return parsed.state
+
+  // Unauthenticated and it creates rows, so it is limited by address. A real
+  // person signs up once; a script would otherwise sign up all afternoon.
+  try {
+    await enforceRateLimit('signup', `ip:${await clientAddress()}`)
+  } catch (error) {
+    return failure(error, formData)
+  }
 
   try {
     await registerOwner(parsed.data)

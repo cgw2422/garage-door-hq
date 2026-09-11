@@ -58,6 +58,11 @@ export async function ensureDraftEstimate(session: AppSession, jobId: string) {
   })
   if (existing) return existing
 
+  const organization = await session.db.organization.findUniqueOrThrow({
+    where: { id: session.organizationId },
+    select: { estimateTermsText: true },
+  })
+
   return prisma.$transaction(async (tx) => {
     const number = await nextNumber(tx, session.organizationId, 'ESTIMATE')
     return tx.estimate.create({
@@ -68,8 +73,10 @@ export async function ensureDraftEstimate(session: AppSession, jobId: string) {
         customerId: job.customerId,
         title: job.jobType?.name ?? 'Recommended Work',
         status: 'DRAFT',
-        // The company default at creation time; the document owns it from here.
+        // Company defaults at creation time; the document owns them from here,
+        // so editing settings later cannot rewrite this estimate.
         taxRateBps: session.defaultTaxRateBps,
+        termsText: organization.estimateTermsText,
       },
     })
   })

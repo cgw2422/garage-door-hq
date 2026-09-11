@@ -61,6 +61,59 @@ export function formatDate(date: Date, timezone: string, opts?: Intl.DateTimeFor
   }).format(date)
 }
 
+/** The calendar date in a timezone, as YYYY-MM-DD. */
+export function zonedDateString(date: Date, timezone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
+/**
+ * Interpret a wall-clock date and time as an instant in the given timezone.
+ *
+ * Everything scheduled in this product is a wall-clock time someone said out
+ * loud ("ten-thirty"), so it has to be anchored to the company's zone rather
+ * than the server's or the browser's.
+ */
+export function zonedToUtc(dateString: string, timeString: string, timezone: string): Date | null {
+  const naive = new Date(`${dateString}T${timeString}:00Z`)
+  if (Number.isNaN(naive.getTime())) return null
+  return new Date(naive.getTime() - zoneOffsetMinutes(naive, timezone) * 60_000)
+}
+
+/** Shift a YYYY-MM-DD string by whole days without touching timezones. */
+export function shiftDateString(dateString: string, days: number): string {
+  const [year, month, day] = dateString.split('-').map(Number)
+  const date = new Date(Date.UTC(year!, month! - 1, day!))
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+/** Monday-based week start for a YYYY-MM-DD string. */
+export function startOfWeekString(dateString: string): string {
+  const [year, month, day] = dateString.split('-').map(Number)
+  const date = new Date(Date.UTC(year!, month! - 1, day!))
+  const weekday = (date.getUTCDay() + 6) % 7
+  return shiftDateString(dateString, -weekday)
+}
+
+export function formatDateString(
+  dateString: string,
+  opts?: Intl.DateTimeFormatOptions,
+): string {
+  const [year, month, day] = dateString.split('-').map(Number)
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    ...opts,
+  }).format(new Date(Date.UTC(year!, month! - 1, day!)))
+}
+
 export function greeting(now: Date, timezone: string) {
   const hour = Number(
     new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', hour12: false }).format(

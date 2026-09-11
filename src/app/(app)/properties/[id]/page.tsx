@@ -47,6 +47,14 @@ export default async function PropertyPage({ params }: { params: Promise<{ id: s
         title={property.nickname ?? property.line1}
         subtitle={property.customer.companyName ?? `${property.customer.firstName} ${property.customer.lastName}`}
         backHref={`/customers/${property.customerId}`}
+        action={
+          <Link
+            href={`/properties/${property.id}/edit`}
+            className="text-[0.8125rem] font-semibold text-brand-600"
+          >
+            Edit
+          </Link>
+        }
       />
       <PageBody>
         <Card>

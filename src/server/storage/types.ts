@@ -34,6 +34,11 @@ export interface StorageDriver {
   put(params: { key: string; body: Buffer; contentType: string }): Promise<void>
   /** Confirms the object actually landed before a row is marked READY. */
   head(key: string): Promise<{ byteSize: number; contentType: string | null } | null>
+  /**
+   * First bytes of a stored object, for magic-byte validation. The uploader
+   * controls the declared content type; the bytes are the only honest source.
+   */
+  readHead(key: string, byteCount: number): Promise<Uint8Array | null>
   delete(key: string): Promise<void>
 }
 

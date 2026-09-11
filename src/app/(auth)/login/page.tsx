@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { getAuthenticatedUser } from '@/lib/session'
+import { getAuthenticatedUser, landingFor } from '@/lib/session'
 import { Logo } from '@/components/ui/logo'
 import { LoginForm } from './login-form'
 
@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: 'Sign in' }
 
 export default async function LoginPage() {
   const user = await getAuthenticatedUser()
-  if (user) redirect(user.hasOrganization ? '/today' : '/onboarding/company')
+  if (user) redirect(landingFor(user))
 
   return (
     <div>

@@ -95,6 +95,25 @@ export async function snapshotEstimate(params: {
       include: {
         customer: true,
         options: { include: { items: { orderBy: { sortOrder: 'asc' } } }, orderBy: { sortOrder: 'asc' } },
+        job: {
+          select: {
+            number: true,
+            property: {
+              select: { nickname: true, line1: true, line2: true, city: true, state: true, postalCode: true },
+            },
+            door: {
+              select: {
+                number: true,
+                nickname: true,
+                positionLabel: true,
+                manufacturer: true,
+                model: true,
+                widthInches: true,
+                heightInches: true,
+              },
+            },
+          },
+        },
       },
     })
     if (!estimate) throw new Error('Estimate not found')
@@ -128,6 +147,23 @@ export async function snapshotEstimate(params: {
         email: estimate.customer.email,
         phone: estimate.customer.phone,
       },
+      // The address the work happens at and the door it happens to, captured
+      // here so a PDF of a signed estimate never has to re-read live records.
+      jobNumber: estimate.job?.number ?? null,
+      property: estimate.job?.property ?? null,
+      door: estimate.job?.door
+        ? {
+            number: estimate.job.door.number,
+            label:
+              estimate.job.door.nickname ??
+              estimate.job.door.positionLabel ??
+              `D-${estimate.job.door.number}`,
+            manufacturer: estimate.job.door.manufacturer,
+            model: estimate.job.door.model,
+            widthInches: estimate.job.door.widthInches,
+            heightInches: estimate.job.door.heightInches,
+          }
+        : null,
       options: estimate.options.map((option) => ({
         tier: option.tier,
         name: option.name,

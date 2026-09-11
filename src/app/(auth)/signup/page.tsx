@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { getAuthenticatedUser } from '@/lib/session'
+import { getAuthenticatedUser, landingFor } from '@/lib/session'
 import { Logo } from '@/components/ui/logo'
 import { SignupForm } from './signup-form'
 import { trialDays } from '@/server/organizations/provision'
@@ -14,7 +14,7 @@ export default async function SignupPage({
   searchParams: Promise<{ ref?: string }>
 }) {
   const user = await getAuthenticatedUser()
-  if (user) redirect(user.hasOrganization ? '/today' : '/onboarding/company')
+  if (user) redirect(landingFor(user))
 
   const { ref } = await searchParams
 

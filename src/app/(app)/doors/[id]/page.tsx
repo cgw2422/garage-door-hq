@@ -5,13 +5,13 @@ import type { DoorEventKind } from '@prisma/client'
 import { requireSession } from '@/lib/session'
 import { formatDate } from '@/server/jobs/queries'
 import { formatCycles, formatDoorSize, formatInches, formatSpringSize, formatWind } from '@/lib/measure'
-import { formatDoorNumber } from '@/lib/numbering'
+import { formatDoorNumber, formatJobNumber } from '@/lib/numbering'
 import { READY_PHOTOS } from '@/server/media/photos'
 import { PageBody, PageHeader } from '@/components/app/page-header'
 import { ButtonLink } from '@/components/ui/button'
-import { Card, CardHeader, Divider, EmptyState, SectionHeading } from '@/components/ui/card'
+import { Card, CardHeader, Divider, EmptyState, ListRow, SectionHeading } from '@/components/ui/card'
 import { DataGrid, DataPoint } from '@/components/ui/stat'
-import { Chip } from '@/components/ui/status'
+import { Chip, JobStatusChip } from '@/components/ui/status'
 import { PhotoGrid } from '@/components/app/photo-grid'
 import { CameraIcon, SpringIcon, WrenchIcon } from '@/components/ui/icons'
 
@@ -66,6 +66,17 @@ export default async function DoorPassportPage({
       },
       events: { orderBy: { occurredAt: 'desc' } },
       photos: { where: READY_PHOTOS, orderBy: { createdAt: 'desc' }, take: 12 },
+      jobs: {
+        where: { archivedAt: null },
+        orderBy: [{ scheduledStart: 'desc' }, { createdAt: 'desc' }],
+        take: 20,
+        include: { jobType: { select: { name: true } } },
+      },
+      inspections: {
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        include: { items: { select: { status: true } } },
+      },
     },
   })
   if (!door) notFound()
@@ -81,6 +92,14 @@ export default async function DoorPassportPage({
         title={displayName}
         subtitle={`${formatDoorNumber(door.number)} · ${door.property.nickname ?? door.property.line1}`}
         backHref={`/properties/${door.propertyId}`}
+        action={
+          <Link
+            href={`/doors/${door.id}/edit`}
+            className="text-[0.8125rem] font-semibold text-brand-600"
+          >
+            Edit
+          </Link>
+        }
       />
       <PageBody>
         <Card>
@@ -126,6 +145,26 @@ export default async function DoorPassportPage({
             <DataPoint
               label="Installed"
               value={door.installedAt ? formatDate(door.installedAt, session.timezone) : '—'}
+            />
+            <DataPoint
+              label="Door warranty"
+              value={
+                door.warrantyEndsAt
+                  ? `${formatDate(door.warrantyEndsAt, session.timezone)}${
+                      door.warrantyEndsAt < new Date() ? ' (expired)' : ''
+                    }`
+                  : '—'
+              }
+            />
+            <DataPoint
+              label="Labor warranty"
+              value={
+                door.laborWarrantyEndsAt
+                  ? `${formatDate(door.laborWarrantyEndsAt, session.timezone)}${
+                      door.laborWarrantyEndsAt < new Date() ? ' (expired)' : ''
+                    }`
+                  : '—'
+              }
             />
           </DataGrid>
 
@@ -299,6 +338,65 @@ export default async function DoorPassportPage({
                   </li>
                 ))}
               </ol>
+            )}
+          </Card>
+        </div>
+
+        <div>
+          <SectionHeading>Jobs on this Door</SectionHeading>
+          <Card padded={false}>
+            {door.jobs.length === 0 ? (
+              <EmptyState title="No jobs yet on this door" />
+            ) : (
+              door.jobs.map((job, index) => (
+                <div key={job.id}>
+                  {index > 0 ? <Divider className="ml-4" /> : null}
+                  <ListRow
+                    href={`/jobs/${job.id}`}
+                    title={job.jobType?.name ?? 'Service'}
+                    subtitle={
+                      job.scheduledStart
+                        ? formatDate(job.scheduledStart, session.timezone)
+                        : formatJobNumber(job.number)
+                    }
+                    trailing={<JobStatusChip status={job.status} />}
+                  />
+                </div>
+              ))
+            )}
+          </Card>
+        </div>
+
+        <div>
+          <SectionHeading>Inspections</SectionHeading>
+          <Card padded={false}>
+            {door.inspections.length === 0 ? (
+              <EmptyState title="No inspections recorded" />
+            ) : (
+              door.inspections.map((inspection, index) => {
+                const findings = inspection.items.filter((item) =>
+                  ['WORN', 'NEEDS_ATTENTION', 'FAILED'].includes(item.status),
+                ).length
+                return (
+                  <div key={inspection.id}>
+                    {index > 0 ? <Divider className="ml-4" /> : null}
+                    <ListRow
+                      href={`/jobs/${inspection.jobId}/inspection`}
+                      title={
+                        inspection.completedAt
+                          ? formatDate(inspection.completedAt, session.timezone)
+                          : 'In progress'
+                      }
+                      subtitle={inspection.summary ?? undefined}
+                      trailing={
+                        <Chip tone={findings > 0 ? 'warning' : 'success'}>
+                          {findings > 0 ? `${findings} findings` : 'All good'}
+                        </Chip>
+                      }
+                    />
+                  </div>
+                )
+              })
             )}
           </Card>
         </div>

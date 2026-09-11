@@ -6,7 +6,22 @@ import { prisma } from './db'
 import { tenantDb, type TenantDb } from './tenancy'
 import { ForbiddenError, isPlatformStaff, roleCan, type Permission } from './rbac'
 
-export interface AppSession {
+/**
+ * The minimum an operation needs to act on one organization's data.
+ *
+ * `AppSession` satisfies it, and so does the customer portal — which has a real
+ * organization and no user at all. Domain services take this rather than a full
+ * session so a signed-in technician and a customer following a secure link run
+ * the same code, with the same tenant boundary.
+ */
+export interface TenantContext {
+  organizationId: string
+  /** Null when the actor is a customer on a portal link rather than a user. */
+  userId: string | null
+  db: TenantDb
+}
+
+export interface AppSession extends TenantContext {
   userId: string
   email: string
   firstName: string
@@ -14,7 +29,6 @@ export interface AppSession {
   fullName: string
   avatarUrl: string | null
   platformRole: PlatformRole
-  organizationId: string
   organizationName: string
   organizationSlug: string
   timezone: string
@@ -25,7 +39,6 @@ export interface AppSession {
   defaultLocationId: string | null
   /** True when this organization has exactly one active member. */
   isSoloOperator: boolean
-  db: TenantDb
 }
 
 export interface AuthenticatedUser {
@@ -68,6 +81,13 @@ export const getAuthenticatedUser = cache(async (): Promise<AuthenticatedUser | 
     hasOrganization: user.memberships.length > 0,
   }
 })
+
+/** Where a signed-in user belongs, given what they are. */
+export function landingFor(user: AuthenticatedUser): string {
+  if (user.hasOrganization) return '/today'
+  if (isPlatformStaff(user.platformRole)) return '/admin'
+  return '/onboarding/company'
+}
 
 export async function requireUser(): Promise<AuthenticatedUser> {
   const user = await getAuthenticatedUser()
@@ -141,7 +161,11 @@ export async function requireSession(): Promise<AppSession> {
   if (session) return session
 
   const user = await getAuthenticatedUser()
-  redirect(user ? '/onboarding/company' : '/login')
+  if (!user) redirect('/login')
+  // Platform staff belong to no customer company, so onboarding is not where
+  // they should land — their admin area is.
+  if (isPlatformStaff(user.platformRole)) redirect('/admin')
+  redirect('/onboarding/company')
 }
 
 export async function requirePermission(permission: Permission): Promise<AppSession> {
@@ -150,8 +174,16 @@ export async function requirePermission(permission: Permission): Promise<AppSess
   return session
 }
 
-export async function requirePlatformStaff() {
-  const session = await getSession()
-  if (!session || !isPlatformStaff(session.platformRole)) redirect('/today')
-  return session
+/**
+ * Garage Door HQ staff.
+ *
+ * Deliberately checked against the authenticated user rather than a company
+ * session: platform staff belong to no customer organization, so requiring a
+ * membership would lock them out of their own admin area.
+ */
+export async function requirePlatformStaff(): Promise<AuthenticatedUser> {
+  const user = await getAuthenticatedUser()
+  if (!user) redirect('/login')
+  if (!isPlatformStaff(user.platformRole)) redirect('/today')
+  return user
 }

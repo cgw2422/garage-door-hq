@@ -382,3 +382,81 @@ export async function addDoorEventTx(
     },
   })
 }
+
+/**
+ * Correct a Door Passport's identifying and specification fields.
+ *
+ * Only the door's current description changes here. Spring systems, openers
+ * and the event timeline are untouched: those are the record of what was done
+ * and when, and a typo in a model number is not a reason to be able to rewrite
+ * them. Replacing hardware goes through job completion, which writes history.
+ */
+export async function updateDoor(
+  session: AppSession,
+  doorId: string,
+  input: DoorInput & { warrantyEndsAt?: Date | null; laborWarrantyEndsAt?: Date | null },
+) {
+  const before = await session.db.door.findUnique({ where: { id: doorId } })
+  if (!before) throw new Error('Door not found')
+
+  const door = await session.db.door.update({
+    where: { id: doorId },
+    data: {
+      nickname: input.nickname?.trim() || null,
+      positionLabel: input.positionLabel?.trim() || null,
+      widthInches: input.widthInches ?? null,
+      heightInches: input.heightInches ?? null,
+      panelCount: input.panelCount ?? null,
+      manufacturer: input.manufacturer?.trim() || null,
+      model: input.model?.trim() || null,
+      serialNumber: input.serialNumber?.trim() || null,
+      operationType: input.operationType ?? before.operationType,
+      material: input.material ?? null,
+      color: input.color?.trim() || null,
+      windowStyle: input.windowStyle?.trim() || null,
+      insulated: input.insulated ?? null,
+      trackType: input.trackType?.trim() || null,
+      trackRadiusInches: input.trackRadiusInches ?? null,
+      headroomInches: input.headroomInches ?? null,
+      weightLbs: input.weightLbs ?? null,
+      installedAt: input.installedAt ?? null,
+      warrantyEndsAt: input.warrantyEndsAt ?? null,
+      laborWarrantyEndsAt: input.laborWarrantyEndsAt ?? null,
+      notesSummary: input.notesSummary?.trim() || null,
+    },
+  })
+
+  await recordAudit({
+    organizationId: session.organizationId,
+    actorUserId: session.userId,
+    action: 'door.updated',
+    entityType: 'Door',
+    entityId: doorId,
+    before: {
+      manufacturer: before.manufacturer,
+      model: before.model,
+      serialNumber: before.serialNumber,
+    },
+    after: {
+      manufacturer: door.manufacturer,
+      model: door.model,
+      serialNumber: door.serialNumber,
+    },
+  })
+
+  return door
+}
+
+export async function archiveDoor(session: AppSession, doorId: string) {
+  const openJobs = await session.db.job.count({
+    where: { doorId, archivedAt: null, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+  })
+  if (openJobs > 0) {
+    throw new Error('This door has open jobs. Finish or cancel them first.')
+  }
+
+  return session.db.door.update({
+    where: { id: doorId },
+    data: { archivedAt: new Date() },
+  })
+}

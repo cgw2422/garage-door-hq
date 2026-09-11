@@ -19,6 +19,7 @@ export interface PhotoTargetProps {
   doorId?: string
   openerId?: string
   inspectionItemId?: string
+  priceBookItemId?: string
   estimateId?: string
   invoiceId?: string
 }
@@ -37,6 +38,8 @@ export function PhotoCapture({
   revalidate,
   compact = false,
   className,
+  allowLibrary = false,
+  libraryLabel = 'Upload',
 }: {
   target: PhotoTargetProps
   kind?: PhotoKind
@@ -44,8 +47,12 @@ export function PhotoCapture({
   revalidate?: string
   compact?: boolean
   className?: string
+  /** Also offer the file picker, for photos already on the device. */
+  allowLibrary?: boolean
+  libraryLabel?: string
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const libraryRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [busy, setBusy] = useState(false)
@@ -97,6 +104,7 @@ export function PhotoCapture({
 
   return (
     <div className={className}>
+      {/* capture="environment" opens the rear camera directly on a phone. */}
       <input
         ref={inputRef}
         type="file"
@@ -106,24 +114,52 @@ export function PhotoCapture({
         className="sr-only"
         onChange={(event) => void onFiles(event.target.files)}
       />
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        disabled={working}
-        className={cn(
-          'inline-flex items-center justify-center gap-2 rounded-[--radius-control] font-semibold transition-colors disabled:opacity-60',
-          compact
-            ? 'h-10 border border-hairline-strong bg-surface px-3 text-sm text-ink active:bg-surface-sunken'
-            : 'h-12 w-full border border-hairline-strong bg-surface px-4 text-[0.9375rem] text-ink active:bg-surface-sunken',
-        )}
-      >
-        <CameraIcon className="h-[1.15em] w-[1.15em]" />
-        {working
-          ? progress
-            ? `Uploading ${progress.done + 1} of ${progress.total}…`
-            : 'Uploading…'
-          : label}
-      </button>
+      {/* No capture attribute, so this one opens the photo library instead. */}
+      <input
+        ref={libraryRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="sr-only"
+        onChange={(event) => void onFiles(event.target.files)}
+      />
+
+      <div className={cn('flex gap-2', compact ? '' : 'w-full')}>
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={working}
+          className={cn(
+            'inline-flex items-center justify-center gap-2 rounded-[--radius-control] font-semibold transition-colors disabled:opacity-60',
+            compact
+              ? 'h-10 border border-hairline-strong bg-surface px-3 text-sm text-ink active:bg-surface-sunken'
+              : 'h-12 flex-1 border border-hairline-strong bg-surface px-4 text-[0.9375rem] text-ink active:bg-surface-sunken',
+          )}
+        >
+          <CameraIcon className="h-[1.15em] w-[1.15em]" />
+          {working
+            ? progress
+              ? `Uploading ${progress.done + 1} of ${progress.total}…`
+              : 'Uploading…'
+            : label}
+        </button>
+
+        {allowLibrary ? (
+          <button
+            type="button"
+            onClick={() => libraryRef.current?.click()}
+            disabled={working}
+            className={cn(
+              'inline-flex items-center justify-center gap-2 rounded-[--radius-control] font-semibold transition-colors disabled:opacity-60',
+              compact
+                ? 'h-10 border border-hairline-strong bg-surface px-3 text-sm text-ink active:bg-surface-sunken'
+                : 'h-12 flex-1 border border-hairline-strong bg-surface px-4 text-[0.9375rem] text-ink active:bg-surface-sunken',
+            )}
+          >
+            {libraryLabel}
+          </button>
+        ) : null}
+      </div>
 
       {error ? (
         <Alert className="mt-2" tone="danger">

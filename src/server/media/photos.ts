@@ -7,6 +7,7 @@ import {
   buildStorageKey,
   storage,
 } from '@/server/storage'
+import { ContentTypeError, assertImageBytes } from '@/server/storage/sniff'
 
 /**
  * Two-phase photo capture.
@@ -30,6 +31,7 @@ export interface PhotoTarget {
   doorId?: string
   openerId?: string
   inspectionItemId?: string
+  priceBookItemId?: string
   estimateId?: string
   invoiceId?: string
 }
@@ -110,13 +112,33 @@ export async function completePhotoUpload(session: AppSession, photoId: string) 
   if (!photo) throw new PhotoUploadError('Photo not found.')
   if (photo.uploadStatus === 'READY') return photo
 
-  const object = await storage().head(photo.storageKey)
+  const driver = storage()
+  const object = await driver.head(photo.storageKey)
   if (!object) {
-    await session.db.photo.update({
-      where: { id: photoId },
-      data: { uploadStatus: 'FAILED' },
-    })
+    await session.db.photo.update({ where: { id: photoId }, data: { uploadStatus: 'FAILED' } })
     throw new PhotoUploadError('The upload did not arrive. Try taking the photo again.')
+  }
+
+  if (object.byteSize > MAX_IMAGE_BYTES) {
+    await rejectUpload(session, photoId, photo.storageKey)
+    throw new PhotoUploadError('That upload is larger than the limit.')
+  }
+
+  // The declared content type came from the browser. Check what actually
+  // landed before this row becomes readable by anyone.
+  const headBytes = await driver.readHead(photo.storageKey, 64)
+  if (!headBytes) {
+    await rejectUpload(session, photoId, photo.storageKey)
+    throw new PhotoUploadError('The upload could not be read back.')
+  }
+
+  let sniffed: string
+  try {
+    sniffed = assertImageBytes(headBytes, photo.contentType ?? 'application/octet-stream')
+  } catch (error) {
+    await rejectUpload(session, photoId, photo.storageKey)
+    if (error instanceof ContentTypeError) throw new PhotoUploadError(error.message)
+    throw error
   }
 
   return session.db.photo.update({
@@ -126,9 +148,19 @@ export async function completePhotoUpload(session: AppSession, photoId: string) 
       uploadedAt: new Date(),
       // Trust the object store's own accounting over the client's claim.
       byteSize: object.byteSize,
-      contentType: object.contentType ?? photo.contentType,
+      contentType: sniffed,
     },
   })
+}
+
+/** Mark a failed upload and remove the object it left behind. */
+async function rejectUpload(session: AppSession, photoId: string, storageKey: string) {
+  await session.db.photo.update({ where: { id: photoId }, data: { uploadStatus: 'FAILED' } })
+  try {
+    await storage().delete(storageKey)
+  } catch (error) {
+    console.warn('[storage] could not remove rejected upload', storageKey, error)
+  }
 }
 
 /**
@@ -167,6 +199,11 @@ async function assertTargetBelongsToTenant(session: AppSession, target: PhotoTar
   if (target.openerId) checks.push(db.opener.findUnique({ where: { id: target.openerId }, select: { id: true } }))
   if (target.estimateId) checks.push(db.estimate.findUnique({ where: { id: target.estimateId }, select: { id: true } }))
   if (target.invoiceId) checks.push(db.invoice.findUnique({ where: { id: target.invoiceId }, select: { id: true } }))
+  if (target.priceBookItemId) {
+    checks.push(
+      db.priceBookItem.findUnique({ where: { id: target.priceBookItemId }, select: { id: true } }),
+    )
+  }
   if (target.inspectionItemId) {
     // Inspection items have no tenant column of their own; they are reached
     // through their scoped inspection.

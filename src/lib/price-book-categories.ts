@@ -1,0 +1,48 @@
+import type { PriceBookCategory } from '@prisma/client'
+
+/** Category labels and ordering, safe to import from a client component. */
+export const CATEGORY_LABELS: Record<PriceBookCategory, string> = {
+  SPRINGS: 'Springs',
+  OPENERS: 'Openers',
+  ROLLERS: 'Rollers',
+  CABLES: 'Cables',
+  DRUMS: 'Drums',
+  BEARINGS: 'Bearings',
+  HINGES: 'Hinges',
+  SHAFTS: 'Shafts',
+  REMOTES: 'Remotes',
+  KEYPADS: 'Keypads',
+  PHOTO_EYES: 'Photo Eyes',
+  WALL_CONTROLS: 'Wall Controls',
+  WEATHER_SEAL: 'Weather Seal',
+  PANELS: 'Panels',
+  DOORS: 'Doors',
+  HARDWARE: 'Hardware',
+  LABOR: 'Labor',
+  SERVICE_CALL: 'Service Calls',
+  PACKAGE: 'Packages',
+  MISCELLANEOUS: 'Miscellaneous',
+}
+
+export const CATEGORY_ORDER: PriceBookCategory[] = [
+  'SPRINGS',
+  'OPENERS',
+  'ROLLERS',
+  'CABLES',
+  'DRUMS',
+  'BEARINGS',
+  'HINGES',
+  'SHAFTS',
+  'REMOTES',
+  'KEYPADS',
+  'PHOTO_EYES',
+  'WALL_CONTROLS',
+  'WEATHER_SEAL',
+  'PANELS',
+  'DOORS',
+  'HARDWARE',
+  'LABOR',
+  'SERVICE_CALL',
+  'PACKAGE',
+  'MISCELLANEOUS',
+]

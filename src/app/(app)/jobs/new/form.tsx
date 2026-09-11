@@ -21,6 +21,7 @@ export function NewJobForm({
   technicians,
   defaultPropertyId,
   defaultDoorId,
+  defaultDate,
   currentUserId,
 }: {
   customerId: string
@@ -29,6 +30,7 @@ export function NewJobForm({
   technicians: Array<{ id: string; name: string }>
   defaultPropertyId?: string
   defaultDoorId?: string
+  defaultDate?: string
   currentUserId: string
 }) {
   const [state, formAction] = useActionState<FormState, FormData>(createJobAction, {})
@@ -37,7 +39,7 @@ export function NewJobForm({
   )
 
   const doors = properties.find((property) => property.id === propertyId)?.doors ?? []
-  const today = new Date().toISOString().slice(0, 10)
+  const today = defaultDate ?? new Date().toISOString().slice(0, 10)
 
   return (
     <form action={formAction} className="space-y-4">

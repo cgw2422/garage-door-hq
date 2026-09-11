@@ -1,5 +1,5 @@
 import type { SignatureKind } from '@prisma/client'
-import type { AppSession } from '@/lib/session'
+import type { TenantContext } from '@/lib/session'
 import { buildStorageKey, storage } from '@/server/storage'
 
 /**
@@ -32,12 +32,12 @@ export function decodeSignature(dataUrl: string): Buffer {
 
 /** Store the image and return the key to record alongside the signature row. */
 export async function storeSignatureImage(
-  session: AppSession,
+  context: TenantContext,
   dataUrl: string,
 ): Promise<string> {
   const body = decodeSignature(dataUrl)
   const key = buildStorageKey({
-    organizationId: session.organizationId,
+    organizationId: context.organizationId,
     folder: 'signatures',
     contentType: 'image/png',
   })

@@ -8,7 +8,7 @@ import { ButtonLink } from '@/components/ui/button'
 import { Card, Divider, EmptyState, ListRow, SectionHeading } from '@/components/ui/card'
 import { Chip, stockTone } from '@/components/ui/status'
 import { BoxIcon, PlusIcon } from '@/components/ui/icons'
-import { InventoryTabs, type InventoryTab } from './tabs'
+import { InventorySearch, InventoryTabs, type InventoryTab } from './tabs'
 
 export const metadata: Metadata = { title: 'Inventory' }
 export const dynamic = 'force-dynamic'
@@ -35,7 +35,7 @@ const CATEGORY_LABELS: Partial<Record<PriceBookCategory, string>> = {
 export default async function InventoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; location?: string }>
+  searchParams: Promise<{ tab?: string; location?: string; q?: string }>
 }) {
   const session = await requireSession()
   const params = await searchParams
@@ -93,7 +93,16 @@ export default async function InventoryPage({
       : Promise.resolve([]),
   ])
 
-  const visible = levels.filter((level) => level.priceBookItem.isActive)
+  const query = (params.q ?? '').trim().toLowerCase()
+  const visible = levels
+    .filter((level) => level.priceBookItem.isActive)
+    .filter((level) =>
+      query
+        ? [level.priceBookItem.name, level.priceBookItem.sku, level.binLocation]
+            .filter(Boolean)
+            .some((value) => value!.toLowerCase().includes(query))
+        : true,
+    )
 
   const byCategory = new Map<PriceBookCategory, typeof visible>()
   for (const level of visible) {
@@ -118,13 +127,24 @@ export default async function InventoryPage({
         title={activeLocation.name}
         subtitle={`${visible.length} parts · ${formatCents(totalValueCents, { currency: session.currency, showCents: false })} at cost`}
         action={
-          <ButtonLink href="/inventory/adjust" size="sm" icon={<PlusIcon />}>
+          <ButtonLink
+            href={`/inventory/add?location=${activeLocation.id}`}
+            size="sm"
+            icon={<PlusIcon />}
+          >
             Add
           </ButtonLink>
         }
       />
       <PageBody>
         <InventoryTabs value={tab} locationId={activeLocation.id} />
+
+        {tab === 'stock' ? (
+          <InventorySearch
+            initialQuery={params.q ?? ''}
+            locationId={activeLocation.id}
+          />
+        ) : null}
 
         {tab === 'stock' ? (
           visible.length === 0 ? (

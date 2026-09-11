@@ -13,7 +13,13 @@ export const dynamic = 'force-dynamic'
 export default async function NewJobPage({
   searchParams,
 }: {
-  searchParams: Promise<{ customerId?: string; propertyId?: string; doorId?: string; q?: string }>
+  searchParams: Promise<{
+    customerId?: string
+    propertyId?: string
+    doorId?: string
+    q?: string
+    date?: string
+  }>
 }) {
   const session = await requirePermission('job:write')
   const params = await searchParams
@@ -61,7 +67,7 @@ export default async function NewJobPage({
                 <div key={customer.id}>
                   {index > 0 ? <Divider className="ml-4" /> : null}
                   <ListRow
-                    href={`/jobs/new?customerId=${customer.id}`}
+                    href={`/jobs/new?customerId=${customer.id}${params.date ? `&date=${params.date}` : ''}`}
                     title={customer.companyName ?? `${customer.firstName} ${customer.lastName}`}
                     subtitle={
                       customer.properties[0]
@@ -164,6 +170,9 @@ export default async function NewJobPage({
           }))}
           defaultPropertyId={params.propertyId}
           defaultDoorId={params.doorId}
+          defaultDate={
+            /^\d{4}-\d{2}-\d{2}$/.test(params.date ?? '') ? params.date! : undefined
+          }
           currentUserId={session.userId}
         />
       </PageBody>

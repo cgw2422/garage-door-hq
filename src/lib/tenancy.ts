@@ -27,6 +27,7 @@ const TENANT_MODELS = new Set<string>([
   'Job',
   'JobType',
   'Inspection',
+  'InspectionRemedy',
   'Estimate',
   'Invoice',
   'Payment',
@@ -41,14 +42,24 @@ const TENANT_MODELS = new Set<string>([
   'Signature',
   'SpringMeasurement',
   'CommunicationLog',
+  'ReviewDestination',
   'ReviewRequest',
   'PortalLink',
   'Membership',
   'Invitation',
   'AuditLog',
+  'NumberSequence',
   'Subscription',
   'Referral',
 ])
+
+/**
+ * The organization row itself is identified by `id`, not `organizationId`, so
+ * it is scoped by a different column rather than left unscoped. Without this a
+ * mis-scoped `organization.update({ where: { id } })` would happily edit
+ * another company's profile.
+ */
+const SELF_SCOPED_MODELS = new Set<string>(['Organization'])
 
 /** Operations whose `where` must be narrowed to the tenant. */
 const WHERE_SCOPED = new Set<string>([
@@ -81,19 +92,26 @@ export function tenantDb(organizationId: string) {
     query: {
       $allModels: {
         async $allOperations({ model, operation, args, query }) {
-          if (!model || !TENANT_MODELS.has(model)) {
+          const selfScoped = !!model && SELF_SCOPED_MODELS.has(model)
+          if (!model || (!TENANT_MODELS.has(model) && !selfScoped)) {
             return query(args)
           }
 
           const next = args as Record<string, unknown>
+          const scope = selfScoped ? { id: organizationId } : { organizationId }
 
           if (WHERE_SCOPED.has(operation)) {
             // Prisma's extended `where` accepts non-unique filters alongside a
             // unique field, so this works for findUnique/update/delete too.
-            next.where = { ...(next.where as object | undefined), organizationId }
+            next.where = { ...(next.where as object | undefined), ...scope }
           }
 
           if (DATA_SCOPED.has(operation)) {
+            // Creating an organization is a signup concern, never a tenant one.
+            if (selfScoped) {
+              throw new Error('tenantDb() cannot create organizations; use unscopedDb.')
+            }
+
             const data = next.data
             next.data = Array.isArray(data)
               ? data.map((row) => ({ ...(row as object), organizationId }))
@@ -101,6 +119,9 @@ export function tenantDb(organizationId: string) {
           }
 
           if (operation === 'upsert') {
+            if (selfScoped) {
+              throw new Error('tenantDb() cannot upsert organizations; use unscopedDb.')
+            }
             next.where = { ...(next.where as object | undefined), organizationId }
             next.create = { ...(next.create as object | undefined), organizationId }
           }

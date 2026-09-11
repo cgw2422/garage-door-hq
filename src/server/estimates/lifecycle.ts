@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db'
 import { recordAudit } from '@/lib/audit'
-import type { AppSession } from '@/lib/session'
+import type { AppSession, TenantContext } from '@/lib/session'
 import { storeSignatureImage } from '@/server/media/signatures'
 import { EstimateError, recalcEstimateTx } from './builder'
 import { snapshotEstimate } from './documents'
@@ -54,8 +54,15 @@ export async function sendEstimate(session: AppSession, estimateId: string) {
   return updated
 }
 
+/**
+ * Choose an option.
+ *
+ * Takes a tenant context rather than a session because a customer following a
+ * secure link runs exactly this code, with the same tenant boundary and no
+ * user attached.
+ */
 export async function selectEstimateOption(
-  session: AppSession,
+  session: TenantContext,
   params: { estimateId: string; optionId: string },
 ) {
   const option = await prisma.estimateOption.findUnique({
@@ -99,7 +106,13 @@ export interface SignEstimateInput {
  * the signature written against that version's content hash. If anything fails
  * the whole thing rolls back and no signature exists for a document nobody saw.
  */
-export async function signEstimate(session: AppSession, input: SignEstimateInput) {
+/**
+ * Capture the customer's approval.
+ *
+ * Runs for a technician on their phone and for a customer on a portal link.
+ * The actor differs; the guarantees do not.
+ */
+export async function signEstimate(session: TenantContext, input: SignEstimateInput) {
   const estimate = await session.db.estimate.findUnique({
     where: { id: input.estimateId },
     include: { options: { select: { id: true } }, job: { select: { id: true } } },

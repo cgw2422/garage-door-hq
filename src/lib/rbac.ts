@@ -21,9 +21,17 @@ export const PERMISSIONS = {
   'inventory:read': ['OWNER', 'ADMIN', 'OFFICE', 'TECHNICIAN'],
   'inventory:adjust': ['OWNER', 'ADMIN', 'OFFICE', 'TECHNICIAN'],
   'inventory:transfer': ['OWNER', 'ADMIN', 'OFFICE', 'TECHNICIAN'],
+  // Everyone reads the catalog — a technician cannot build an estimate without
+  // it. Only owners and admins change what anything costs.
+  'pricebook:read': ['OWNER', 'ADMIN', 'OFFICE', 'TECHNICIAN'],
   'pricebook:write': ['OWNER', 'ADMIN'],
   'reports:financial': ['OWNER', 'ADMIN'],
+  'team:read': ['OWNER', 'ADMIN', 'OFFICE'],
   'team:manage': ['OWNER', 'ADMIN'],
+  'schedule:read': ['OWNER', 'ADMIN', 'OFFICE', 'TECHNICIAN'],
+  'schedule:assign': ['OWNER', 'ADMIN', 'OFFICE'],
+  'photo:delete': ['OWNER', 'ADMIN', 'OFFICE', 'TECHNICIAN'],
+  'portal:issue': ['OWNER', 'ADMIN', 'OFFICE', 'TECHNICIAN'],
   'settings:manage': ['OWNER', 'ADMIN'],
   'subscription:manage': ['OWNER'],
 } as const satisfies Record<string, readonly OrgRole[]>

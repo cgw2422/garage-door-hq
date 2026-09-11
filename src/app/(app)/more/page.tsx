@@ -13,6 +13,7 @@ export default async function MorePage() {
 
   const tools = [
     { href: '/tools/spring-calculator', title: 'Spring Calculator', subtitle: 'Measure and match springs' },
+    { href: '/schedule', title: 'Schedule', subtitle: 'Day and week view' },
     { href: '/estimates', title: 'Estimates', subtitle: 'Good, better, best' },
     { href: '/invoices', title: 'Invoices', subtitle: 'Sent, partial and paid' },
   ]
@@ -21,8 +22,11 @@ export default async function MorePage() {
     ...(roleCan(session.role, 'reports:financial')
       ? [{ href: '/money', title: 'Money Dashboard', subtitle: 'Revenue, costs and profit' }]
       : []),
-    ...(roleCan(session.role, 'pricebook:write')
+    ...(roleCan(session.role, 'pricebook:read')
       ? [{ href: '/settings/price-book', title: 'Price Book', subtitle: 'Parts, labor and packages' }]
+      : []),
+    ...(roleCan(session.role, 'team:manage')
+      ? [{ href: '/settings/team', title: 'Team Members', subtitle: 'Invite and manage users' }]
       : []),
     ...(roleCan(session.role, 'settings:manage')
       ? [{ href: '/settings', title: 'Company Settings', subtitle: 'Branding, tax, hours' }]

@@ -9,6 +9,8 @@ import {
   MAX_IMAGE_BYTES,
 } from '@/server/storage'
 import { beginPhotoUpload, completePhotoUpload, deletePhoto } from '@/server/media/photos'
+import { maybeSweepInBackground } from '@/server/media/cleanup'
+import { enforceRateLimit } from '@/lib/rate-limit'
 
 const targetSchema = z.object({
   jobId: z.string().uuid().optional(),
@@ -17,6 +19,7 @@ const targetSchema = z.object({
   doorId: z.string().uuid().optional(),
   openerId: z.string().uuid().optional(),
   inspectionItemId: z.string().uuid().optional(),
+  priceBookItemId: z.string().uuid().optional(),
   estimateId: z.string().uuid().optional(),
   invoiceId: z.string().uuid().optional(),
 })
@@ -53,7 +56,12 @@ export async function beginPhotoUploadAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'That file cannot be uploaded.' }
   }
 
+  // Reclaims objects from uploads that were never completed. Runs on a small
+  // fraction of calls so a deployment with no scheduler still converges.
+  maybeSweepInBackground()
+
   try {
+    await enforceRateLimit('upload', `user:${session.userId}`)
     const { photoId, upload } = await beginPhotoUpload(session, {
       target: parsed.data.target,
       kind: parsed.data.kind,
@@ -95,7 +103,35 @@ export async function completePhotoUploadAction(
 }
 
 export async function deletePhotoAction(input: { photoId: string; revalidate?: string }) {
-  const session = await requirePermission('job:write')
+  const session = await requirePermission('photo:delete')
   await deletePhoto(session, input.photoId)
   if (input.revalidate) revalidatePath(input.revalidate)
+}
+
+const detailsSchema = z.object({
+  photoId: z.string().uuid(),
+  caption: z.string().max(300).optional(),
+  kind: z.enum(['BEFORE', 'AFTER', 'DAMAGE', 'EQUIPMENT', 'SERIAL_TAG', 'INSPECTION', 'OTHER']),
+})
+
+/** Caption and category are the only editable parts of a photo. */
+export async function updatePhotoAction(
+  input: z.infer<typeof detailsSchema>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await requirePermission('job:write')
+  const parsed = detailsSchema.parse(input)
+
+  const photo = await session.db.photo.findUnique({
+    where: { id: parsed.photoId },
+    select: { id: true },
+  })
+  if (!photo) return { ok: false, error: 'Photo not found.' }
+
+  await session.db.photo.update({
+    where: { id: parsed.photoId },
+    data: { caption: parsed.caption?.trim() || null, kind: parsed.kind },
+  })
+
+  revalidatePath(`/photos/${parsed.photoId}`)
+  return { ok: true }
 }

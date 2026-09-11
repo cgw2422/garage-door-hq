@@ -12,6 +12,7 @@ const schema = z.object({
   postalCode: z.string().max(16).optional(),
   timezone: z.string().max(64).optional(),
   referralCode: z.string().max(40).optional(),
+  catalog: z.enum(['starter', 'blank']).optional(),
 })
 
 export async function saveCompany(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -20,7 +21,12 @@ export async function saveCompany(_prev: FormState, formData: FormData): Promise
   if (!parsed.ok) return parsed.state
 
   try {
-    await createCompany({ ownerUserId: user.userId, ...parsed.data })
+    const { catalog, ...company } = parsed.data
+    await createCompany({
+      ownerUserId: user.userId,
+      ...company,
+      includeStarterCatalog: catalog !== 'blank',
+    })
   } catch (error) {
     return failure(error, formData)
   }

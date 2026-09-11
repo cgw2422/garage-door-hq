@@ -1,9 +1,14 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
 import { requirePermission } from '@/lib/session'
 import { PageBody, PageHeader } from '@/components/app/page-header'
 import { Card, Divider, ListRow, SectionHeading } from '@/components/ui/card'
-import { CompanyForm, LaborCostForm, ReviewDestinationForm } from './forms'
+import {
+  CompanyForm,
+  LaborCostForm,
+  LogoManager,
+  NumberingForm,
+  ReviewDestinationForm,
+} from './forms'
 
 export const metadata: Metadata = { title: 'Settings' }
 export const dynamic = 'force-dynamic'
@@ -11,22 +16,28 @@ export const dynamic = 'force-dynamic'
 export default async function SettingsPage() {
   const session = await requirePermission('settings:manage')
 
-  const [organization, googleDestination, subscription] = await Promise.all([
+  const [organization, googleDestination, subscription, sequences] = await Promise.all([
     session.db.organization.findUniqueOrThrow({ where: { id: session.organizationId } }),
     session.db.reviewDestination.findUnique({
       where: {
         organizationId_provider: { organizationId: session.organizationId, provider: 'GOOGLE' },
       },
     }),
-    session.db.subscription.findUnique({
-      where: { organizationId: session.organizationId },
-    }),
+    session.db.subscription.findUnique({ where: { organizationId: session.organizationId } }),
+    session.db.numberSequence.findMany({ orderBy: { entity: 'asc' } }),
   ])
 
   return (
     <>
       <PageHeader title="Settings" subtitle={organization.name} backHref="/more" />
       <PageBody>
+        <div>
+          <SectionHeading>Branding</SectionHeading>
+          <Card>
+            <LogoManager hasLogo={organization.logoStorageKey !== null} />
+          </Card>
+        </div>
+
         <div>
           <SectionHeading>Company</SectionHeading>
           <Card>
@@ -37,13 +48,20 @@ export default async function SettingsPage() {
                 email: organization.email ?? '',
                 website: organization.website ?? '',
                 addressLine1: organization.addressLine1 ?? '',
+                addressLine2: organization.addressLine2 ?? '',
                 city: organization.city ?? '',
                 state: organization.state ?? '',
                 postalCode: organization.postalCode ?? '',
                 timezone: organization.timezone,
+                currency: organization.currency,
                 taxRatePercent: (organization.defaultTaxRateBps / 100).toString(),
                 defaultPaymentTermsDays: String(organization.defaultPaymentTermsDays),
+                estimateTermsText: organization.estimateTermsText ?? '',
+                invoiceTermsText: organization.invoiceTermsText ?? '',
               }}
+              businessHours={
+                (organization.businessHours as Record<string, unknown> | null) ?? null
+              }
             />
           </Card>
         </div>
@@ -68,6 +86,19 @@ export default async function SettingsPage() {
             <ReviewDestinationForm
               url={googleDestination?.url ?? ''}
               label={googleDestination?.label ?? ''}
+              enabled={organization.reviewRequestEnabled}
+            />
+          </Card>
+        </div>
+
+        <div>
+          <SectionHeading>Numbering</SectionHeading>
+          <Card>
+            <NumberingForm
+              sequences={sequences.map((sequence) => ({
+                entity: sequence.entity,
+                nextValue: sequence.nextValue,
+              }))}
             />
           </Card>
         </div>
@@ -82,6 +113,12 @@ export default async function SettingsPage() {
             />
             <Divider className="ml-4" />
             <ListRow
+              href="/settings/team"
+              title="Team Members"
+              subtitle="Invite people and set their roles"
+            />
+            <Divider className="ml-4" />
+            <ListRow
               title="Subscription"
               subtitle={
                 subscription
@@ -93,11 +130,8 @@ export default async function SettingsPage() {
         </div>
 
         <p className="px-1 text-center text-xs leading-relaxed text-ink-subtle">
-          Team management, invoice branding and logo upload are not built yet — see{' '}
-          <Link href="/more" className="font-semibold text-brand-600">
-            More
-          </Link>{' '}
-          for what is available today.
+          Changing settings never alters an estimate a customer signed or an invoice already
+          issued — each document keeps the terms, tax rate and totals it was created with.
         </p>
       </PageBody>
     </>

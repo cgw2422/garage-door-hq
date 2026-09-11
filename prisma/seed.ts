@@ -151,9 +151,33 @@ async function main() {
       state: 'NC',
       defaultTaxRateBps: 725,
       onboardingCompletedAt: monthsAgo(14),
+      postalCode: '28206',
+      defaultPaymentTermsDays: 15,
       // A company that has been running a while turned labor costing on.
       laborCostEnabled: true,
       laborCostPerHourCents: 4200,
+      // Terms are copied onto each document at creation, so these apply to new
+      // work only and never restate what a customer has already signed.
+      estimateTermsText:
+        'Prices are valid for 30 days. Springs and hardware carry a 5-year parts warranty; ' +
+        'labor is warranted for 12 months. Work begins once this estimate is approved.',
+      invoiceTermsText:
+        'Payment is due within 15 days. We accept cash, check, and card. ' +
+        'Thank you for your business.',
+      reviewRequestEnabled: true,
+    },
+  })
+
+  await prisma.reviewDestination.upsert({
+    where: { organizationId_provider: { organizationId: orgId, provider: 'GOOGLE' } },
+    update: {},
+    create: {
+      organizationId: orgId,
+      provider: 'GOOGLE',
+      url: 'https://g.page/r/precision-garage-door-demo/review',
+      label: 'Google',
+      isPrimary: true,
+      isActive: true,
     },
   })
 
@@ -185,8 +209,10 @@ async function main() {
     })
   }
 
-  await prisma.reviewDestination.create({
-    data: {
+  await prisma.reviewDestination.upsert({
+    where: { organizationId_provider: { organizationId: orgId, provider: 'GOOGLE' } },
+    update: {},
+    create: {
       organizationId: orgId,
       provider: 'GOOGLE',
       label: 'Google',

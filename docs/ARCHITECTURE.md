@@ -144,12 +144,21 @@ navigates directly to `/money` gets a refusal, not a blank screen.
 `requireSession()` and in each action. Middleware is a UX convenience that runs on a different
 runtime with different data access; making it the gate is how tenant leaks happen.
 
-### 2.4 Defence in depth, later
+### 2.4 Defence in depth
 
 Postgres row-level security keyed to a `SET LOCAL app.organization_id` is the natural second
-layer. It is deliberately **not** in Phase 1: it interacts awkwardly with connection pooling
-on Railway, and adding it before the query patterns settle risks a false sense of safety.
-The schema is already shaped for it — every tenant table has the column RLS would key on.
+layer, and it was evaluated properly in Phase 1b rather than deferred by reflex. The decision
+is **not to adopt it yet**: it needs connection-level session state that Prisma's pooling does
+not give a reliable place for, and the three paths that cross tenants by design — signup,
+platform admin, and the account-less customer portal — would each need a policy exception.
+The reasoning, and the specific conditions that would change the answer, are in
+[RLS-EVALUATION.md](RLS-EVALUATION.md). The schema stays shaped for it.
+
+What was built instead, in Phase 1b: the tenant-model list is now verified against
+`schema.prisma` by a test, so a new table cannot silently fall out of scope (it found three
+that had); the `Organization` row is scoped by `id`; and a static test walks every server
+action and route handler insisting on an authorization gate, with public endpoints listed
+individually and justified.
 
 ---
 
@@ -408,7 +417,8 @@ Each of these has schema support already, so none of them is a retrofit later.
 | Advanced reporting | Needs real usage data to be worth designing. | Ledger and job costing accumulate the inputs now |
 | AI anything | The product must be useful without it. | Voice notes store audio; `transcript` stays null until a real provider fills it |
 | CSV import | Import mapping UI is a time sink; few day-one customers have clean exports. | Models are import-shaped |
-| Postgres RLS | Interacts with pooling; add once query patterns settle. | Every tenant table has the keying column |
+| Postgres RLS | Evaluated in Phase 1b and declined for now — see [RLS-EVALUATION.md](RLS-EVALUATION.md). | Every tenant table has the keying column; a test keeps the scoped list honest |
+| Account impersonation | Doing it safely needs audited, time-boxed, consent-recorded access; doing it unsafely is one function that reads any company. | Platform admin reads are already separated from tenant reads |
 
 ---
 
@@ -428,11 +438,11 @@ freezing · transactional job completion · invoice generation from the signed o
 payment recording · R2 photo capture. See [PHASE-1A.md](PHASE-1A.md) for what shipped, the
 shortcuts taken and what is not production-ready.
 
-**Phase 1b — Make it shippable**
-Price book management UI · inventory adjust and transfer screens · team invitations · global
-search across customers, phones, addresses, SKUs and spring specs · customer portal · platform
-admin dashboard · subscription state enforcement · PDF documents · schedule views · rate
-limiting · Postgres RLS · PWA install prompt.
+**Phase 1b — Make it shippable** *(shipped; see [PHASE-1B.md](PHASE-1B.md))*
+Price book management UI · inventory adjust and transfer screens · team invitations · customer
+portal links · platform admin dashboard · PDF documents · schedule views · company settings ·
+photo management · rate limiting. Deferred from this list: subscription state enforcement,
+global search, PWA install prompt, and Postgres RLS (evaluated — see above).
 
 **Phase 2 — Money in, messages out**
 Stripe payments and Stripe Billing · customer portal (view, select, sign, pay) · SMS and email

@@ -99,16 +99,20 @@ model Organization {
   name String
   slug String @unique
 
-  logoUrl      String?
-  phone        String?
-  email        String?
-  website      String?
-  addressLine1 String?
-  addressLine2 String?
-  city         String?
-  state        String?
-  postalCode   String?
-  country      String  @default("US")
+  logoUrl        String?
+  /// Object-storage key for an uploaded logo. Served through an authorized
+  /// route like every other private object; `logoUrl` remains for an external
+  /// image a company would rather link to.
+  logoStorageKey String?
+  phone          String?
+  email          String?
+  website        String?
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  state          String?
+  postalCode     String?
+  country        String  @default("US")
 
   timezone          String      @default("America/New_York")
   currency          String      @default("USD")
@@ -117,8 +121,17 @@ model Organization {
   companySize       CompanySize @default(SOLO)
 
   /// Company-configurable business rules.
-  defaultPaymentTermsDays Int   @default(0)
-  businessHours           Json?
+  defaultPaymentTermsDays Int @default(0)
+
+  /// Default terms printed on new documents. Copied onto each estimate and
+  /// invoice when it is created, so editing these never rewrites a document a
+  /// customer has already seen.
+  estimateTermsText String?
+  invoiceTermsText  String?
+
+  /// Review requests are queued on job completion only while this is on.
+  reviewRequestEnabled Boolean @default(true)
+  businessHours        Json?
 
   /// Internal labor cost is opt-in. A solo operator is never forced to invent
   /// an hourly rate for themselves just to see a profit number.
@@ -193,9 +206,21 @@ model Invitation {
   tokenHash      String    @unique
   expiresAt      DateTime
   acceptedAt     DateTime?
-  createdAt      DateTime  @default(now())
+  revokedAt      DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// The truck the invitee will work out of once they accept.
+  defaultLocationId String?
+  invitedById       String?
+
+  /// Email delivery is not wired up yet, so an admin copies the link. These
+  /// record that the link was re-issued rather than that a message was sent.
+  lastSentAt DateTime @default(now())
+  sendCount  Int      @default(1)
+
+  createdAt DateTime @default(now())
+
+  organization    Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  defaultLocation InventoryLocation? @relation("InvitationLocation", fields: [defaultLocationId], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -767,6 +792,7 @@ model PriceBookItem {
 
   organization  Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   springSpec    SpringSpec?
+  photos        Photo[]
   stockLevels   StockLevel[]
   transactions  InventoryTransaction[]
   estimateItems EstimateItem[]
@@ -833,6 +859,8 @@ model PriceBookPackageItem {
   packageId       String
   priceBookItemId String
   quantity        Decimal @default(1) @db.Decimal(10, 3)
+  /// Order the components appear in on an estimate.
+  sortOrder       Int     @default(0)
 
   package       PriceBookPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
   priceBookItem PriceBookItem    @relation(fields: [priceBookItemId], references: [id], onDelete: Restrict)
@@ -867,6 +895,7 @@ model InventoryLocation {
   assignedUser User?                  @relation("LocationAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
   stockLevels  StockLevel[]
   memberships  Membership[]
+  invitations  Invitation[]           @relation("InvitationLocation")
   txnsFrom     InventoryTransaction[] @relation("TxnFromLocation")
   txnsTo       InventoryTransaction[] @relation("TxnToLocation")
 
@@ -1309,6 +1338,7 @@ model Photo {
   doorId           String?
   openerId         String?
   inspectionItemId String?
+  priceBookItemId  String?
   estimateId       String?
   invoiceId        String?
 
@@ -1322,12 +1352,15 @@ model Photo {
   door           Door?           @relation(fields: [doorId], references: [id], onDelete: Cascade)
   opener         Opener?         @relation(fields: [openerId], references: [id], onDelete: Cascade)
   inspectionItem InspectionItem? @relation(fields: [inspectionItemId], references: [id], onDelete: Cascade)
+  priceBookItem  PriceBookItem?  @relation(fields: [priceBookItemId], references: [id], onDelete: Cascade)
   estimate       Estimate?       @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   invoice        Invoice?        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, jobId])
   @@index([organizationId, doorId])
   @@index([organizationId, createdAt])
+  /// Drives the orphan sweep: PENDING rows older than the upload window.
+  @@index([uploadStatus, createdAt])
 }
 
 model VoiceNote {
@@ -1722,10 +1755,27 @@ model NumberSequence {
   organizationId String
   entity         SequenceEntity
   nextValue      Int            @default(1000)
+  /// Overrides the built-in label, so a company can use "GD-" instead of "INV-".
+  prefix         String?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@id([organizationId, entity])
+}
+
+/// Fixed-window counters for rate limiting.
+///
+/// Kept in Postgres rather than memory so the limit holds across a restart and
+/// across instances. Rows are disposable: a sweep deletes expired windows.
+model RateLimit {
+  /// Scope plus subject, e.g. "login:ip:203.0.113.4" or "signup:email:a@b.c".
+  key         String
+  windowStart DateTime
+  count       Int      @default(0)
+  expiresAt   DateTime
+
+  @@id([key, windowStart])
+  @@index([expiresAt])
 }
 
 model AuditLog {

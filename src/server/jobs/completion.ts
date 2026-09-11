@@ -133,12 +133,18 @@ export async function completeJob(
     ? await storeSignatureImage(session, input.signature.dataUrl)
     : null
 
-  const reviewDestination = input.requestReview
-    ? await session.db.reviewDestination.findFirst({
-        where: { isActive: true },
-        orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
-      })
-    : null
+  // Both the company switch and the technician's checkbox have to be on.
+  const organization = await session.db.organization.findUniqueOrThrow({
+    where: { id: session.organizationId },
+    select: { reviewRequestEnabled: true },
+  })
+  const reviewDestination =
+    input.requestReview && organization.reviewRequestEnabled
+      ? await session.db.reviewDestination.findFirst({
+          where: { isActive: true },
+          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+        })
+      : null
 
   const result = await prisma.$transaction(
     async (tx) => {

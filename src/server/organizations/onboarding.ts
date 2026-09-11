@@ -59,6 +59,8 @@ export async function createCompany(input: {
   postalCode?: string | null
   timezone?: string
   referralCode?: string | null
+  /** False starts with an empty price book instead of the starter catalog. */
+  includeStarterCatalog?: boolean
 }) {
   const alreadyIn = await prisma.membership.findFirst({
     where: { userId: input.ownerUserId, isActive: true },
@@ -78,6 +80,7 @@ export async function createCompany(input: {
     postalCode: input.postalCode,
     timezone: input.timezone,
     referralCode: input.referralCode,
+    includeStarterCatalog: input.includeStarterCatalog !== false,
   })
 
   await recordAudit({

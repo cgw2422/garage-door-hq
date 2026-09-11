@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { OrgRole } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { tenantDb } from '@/lib/tenancy'
 import type { AppSession } from '@/lib/session'
@@ -189,4 +190,62 @@ export async function stockOf(locationId: string, priceBookItemId: string) {
     where: { locationId_priceBookItemId: { locationId, priceBookItemId } },
   })
   return Number((level?.quantity ?? 0).toString())
+}
+
+/**
+ * A second (or third) member of an existing company, with any role.
+ *
+ * Used by the authorization tests: the point is to exercise the same service
+ * functions the app calls, with a session that differs only by role.
+ */
+export async function addTestMember(
+  session: AppSession,
+  role: OrgRole,
+  options?: { isActive?: boolean },
+): Promise<AppSession> {
+  const suffix = randomUUID().slice(0, 8)
+
+  const user = await prisma.user.create({
+    data: {
+      email: `${role.toLowerCase()}-${suffix}@test.invalid`,
+      passwordHash: 'not-a-real-hash',
+      firstName: role.charAt(0) + role.slice(1).toLowerCase(),
+      lastName: 'Member',
+    },
+  })
+
+  const membership = await prisma.membership.create({
+    data: {
+      userId: user.id,
+      organizationId: session.organizationId,
+      role,
+      isActive: options?.isActive ?? true,
+      defaultLocationId: session.defaultLocationId,
+    },
+  })
+
+  return {
+    ...session,
+    userId: user.id,
+    email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    fullName: `${user.firstName} ${user.lastName}`,
+    role,
+    isSoloOperator: false,
+    defaultLocationId: membership.defaultLocationId,
+  }
+}
+
+/** The owner's membership row, for tests that change roles. */
+export async function ownerMembership(session: AppSession) {
+  return prisma.membership.findFirstOrThrow({
+    where: { organizationId: session.organizationId, userId: session.userId },
+  })
+}
+
+export async function membershipFor(session: AppSession, userId: string) {
+  return prisma.membership.findFirstOrThrow({
+    where: { organizationId: session.organizationId, userId },
+  })
 }

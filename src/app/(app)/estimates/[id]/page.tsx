@@ -5,6 +5,7 @@ import { roleCan } from '@/lib/rbac'
 import { formatBps, formatCents } from '@/lib/money'
 import { formatEstimateNumber } from '@/lib/numbering'
 import { PageHeader } from '@/components/app/page-header'
+import { activeLinkFor } from '@/server/portal/service'
 import { Chip } from '@/components/ui/status'
 import { EstimateBuilder } from './builder'
 
@@ -43,7 +44,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
   })
   if (!estimate) notFound()
 
-  const [packages, catalog] = await Promise.all([
+  const [packages, catalog, portalLink] = await Promise.all([
     session.db.priceBookPackage.findMany({
       where: { isActive: true },
       orderBy: { sortOrder: 'asc' },
@@ -54,6 +55,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
       select: { id: true, name: true, sku: true, priceCents: true, category: true },
     }),
+    activeLinkFor(session, { estimateId: id }),
   ])
 
   const editable = estimate.status !== 'ACCEPTED' && estimate.status !== 'VOID'
@@ -85,6 +87,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
         }
       />
       <EstimateBuilder
+        timezone={session.timezone}
         estimate={{
           id: estimate.id,
           number: estimate.number,
@@ -125,6 +128,16 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
         currency={session.currency}
         canEditTax={roleCan(session.role, 'pricebook:write')}
         defaultTaxRateBps={session.defaultTaxRateBps}
+        portalLink={
+          portalLink
+            ? {
+                id: portalLink.id,
+                expiresAt: portalLink.expiresAt.toISOString(),
+                viewCount: portalLink.viewCount,
+                lastViewedAt: portalLink.lastViewedAt?.toISOString() ?? null,
+              }
+            : null
+        }
         signature={
           signature
             ? {

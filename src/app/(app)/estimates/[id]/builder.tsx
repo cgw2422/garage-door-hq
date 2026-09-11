@@ -12,6 +12,7 @@ import { Card, Divider, EmptyState, SectionHeading } from '@/components/ui/card'
 import { Field, Input, Select } from '@/components/ui/field'
 import { SubmitButton } from '@/components/ui/submit-button'
 import { PageBody, StickyActions } from '@/components/app/page-header'
+import { ShareLink } from '@/components/app/share-link'
 import { Chip } from '@/components/ui/status'
 import { DocumentIcon, MinusIcon, PlusIcon } from '@/components/ui/icons'
 import {
@@ -62,7 +63,9 @@ export function EstimateBuilder({
   currency,
   canEditTax,
   defaultTaxRateBps,
+  portalLink,
   signature,
+  timezone,
 }: {
   estimate: {
     id: string
@@ -82,6 +85,12 @@ export function EstimateBuilder({
   currency: string
   canEditTax: boolean
   defaultTaxRateBps: number
+  portalLink: {
+    id: string
+    expiresAt: string
+    viewCount: number
+    lastViewedAt: string | null
+  } | null
   signature: {
     id: string
     signerName: string
@@ -89,6 +98,8 @@ export function EstimateBuilder({
     version: number | null
     hash: string | null
   } | null
+  /** The company's timezone, so dates render the same on both sides. */
+  timezone: string
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -278,6 +289,29 @@ export function EstimateBuilder({
               ) : null}
             </Card>
           </>
+        ) : null}
+
+        {hasLines ? (
+          <ShareLink
+            timezone={timezone}
+            target="ESTIMATE"
+            documentId={estimate.id}
+            existingLink={portalLink}
+            revalidate={`/estimates/${estimate.id}`}
+            label="Send to the customer"
+          />
+        ) : null}
+
+        {hasLines ? (
+          <a
+            href={`/api/documents/estimates/${estimate.id}/pdf`}
+            target="_blank"
+            rel="noreferrer"
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-[--radius-control] border border-hairline-strong bg-surface font-semibold text-ink active:bg-surface-sunken"
+          >
+            <DocumentIcon className="h-[1.15em] w-[1.15em]" />
+            {signature ? 'Signed PDF' : 'Preview PDF'}
+          </a>
         ) : null}
 
         {presentState.error ? <Alert>{presentState.error}</Alert> : null}

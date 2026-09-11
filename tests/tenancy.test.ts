@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { prisma } from '@/lib/db'
 import { tenantDb } from '@/lib/tenancy'
@@ -107,5 +109,40 @@ describe('tenant-scoped client', () => {
   it('scopes aggregates and counts', async () => {
     expect(await tenantDb(orgA).job.count()).toBe(0)
     expect(await tenantDb(orgB).job.count()).toBe(1)
+  })
+
+  /**
+   * The list of scoped models is hand-maintained, and a model added to the
+   * schema without being added to the list is silently unscoped. This reads
+   * the schema and insists the two agree, so the next migration cannot open a
+   * hole quietly.
+   */
+  it('scopes every model in the schema that carries an organization id', () => {
+    const schema = readFileSync(join(process.cwd(), 'prisma', 'schema.prisma'), 'utf8')
+    const scoping = readFileSync(join(process.cwd(), 'src', 'lib', 'tenancy.ts'), 'utf8')
+
+    const declared = new Set(
+      [...scoping.matchAll(/^\s*'(\w+)',$/gm)].map((match) => match[1]!),
+    )
+
+    const missing: string[] = []
+    for (const [, name, body] of schema.matchAll(/^model (\w+) \{([\s\S]*?)^\}/gm)) {
+      if (!/^\s*organizationId\s/m.test(body!)) continue
+      if (!declared.has(name!)) missing.push(name!)
+    }
+
+    expect(missing).toEqual([])
+  })
+
+  it('scopes the organization row itself, which has no organization id', async () => {
+    const db = tenantDb(orgA)
+
+    await db.organization.updateMany({
+      where: { id: orgB },
+      data: { name: 'Hijacked' },
+    })
+
+    const theirs = await prisma.organization.findUniqueOrThrow({ where: { id: orgB } })
+    expect(theirs.name).not.toBe('Hijacked')
   })
 })

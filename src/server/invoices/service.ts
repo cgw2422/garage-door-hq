@@ -43,6 +43,10 @@ export async function createInvoiceFromEstimateTx(
 
   const option = estimate.selectedOption
   const number = await nextNumber(tx, params.organizationId, 'INVOICE')
+  const organization = await tx.organization.findUniqueOrThrow({
+    where: { id: params.organizationId },
+    select: { invoiceTermsText: true },
+  })
 
   const subtotalCents = option.items.reduce(
     (sum, item) => sum + Math.round(Number(item.quantity.toString()) * item.unitPriceCents),
@@ -76,6 +80,7 @@ export async function createInvoiceFromEstimateTx(
       totalCents,
       paidCents: 0,
       balanceCents: totalCents,
+      termsText: organization.invoiceTermsText,
       items: {
         create: option.items.map((item, index) => ({
           priceBookItemId: item.priceBookItemId,
@@ -122,6 +127,10 @@ export async function createInvoiceFromLinesTx(
   }
 
   const number = await nextNumber(tx, params.organizationId, 'INVOICE')
+  const organization = await tx.organization.findUniqueOrThrow({
+    where: { id: params.organizationId },
+    select: { invoiceTermsText: true },
+  })
 
   const subtotalCents = params.lines.reduce(
     (sum, line) => sum + Math.round(line.quantity * line.unitPriceCents),
@@ -148,6 +157,7 @@ export async function createInvoiceFromLinesTx(
       totalCents,
       paidCents: 0,
       balanceCents: totalCents,
+      termsText: organization.invoiceTermsText,
       items: {
         create: params.lines.map((line, index) => ({
           priceBookItemId: line.priceBookItemId ?? null,

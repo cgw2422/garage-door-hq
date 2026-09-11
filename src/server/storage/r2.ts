@@ -111,6 +111,25 @@ export function createR2Driver(config: R2Config): StorageDriver {
       }
     },
 
+    async readHead(key, byteCount) {
+      try {
+        const result = await client.send(
+          new GetObjectCommand({
+            Bucket: config.bucket,
+            Key: key,
+            Range: `bytes=0-${Math.max(byteCount - 1, 0)}`,
+          }),
+        )
+        const body = await result.Body?.transformToByteArray()
+        return body ?? null
+      } catch (error) {
+        const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+          ?.httpStatusCode
+        if (status === 404 || status === 403) return null
+        throw new StorageError(`R2 range read failed for ${key}: ${(error as Error).message}`)
+      }
+    },
+
     async delete(key) {
       await client.send(new DeleteObjectCommand({ Bucket: config.bucket, Key: key }))
     },

@@ -50,7 +50,8 @@ export default async function OnboardingReadyPage() {
       <div className="mt-5 rounded-[--radius-control] bg-warning-50 px-3.5 py-3 text-sm text-warning-700">
         <p className="font-semibold">Review your prices before you quote</p>
         <p className="mt-0.5 leading-relaxed">
-          The starter price book uses suggested numbers, not yours. Set your own in{' '}
+          The starter price book carries example numbers so you can quote today. They are
+          not recommendations and not industry figures — set your own in{' '}
           <Link href="/settings/price-book" className="font-semibold underline">
             Price Book
           </Link>

@@ -125,6 +125,15 @@ export function createLocalDriver(baseUrl: string): StorageDriver {
       }
     },
 
+    async readHead(key, byteCount) {
+      try {
+        const { body } = await readLocalObject(key)
+        return new Uint8Array(body.subarray(0, byteCount))
+      } catch {
+        return null
+      }
+    },
+
     async delete(key) {
       const path = pathForKey(key)
       await unlink(path).catch(() => undefined)

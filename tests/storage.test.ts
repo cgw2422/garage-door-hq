@@ -6,6 +6,17 @@ import { beginPhotoUpload, completePhotoUpload, PhotoUploadError } from '@/serve
 import { storage, resetStorage, buildStorageKey, MAX_IMAGE_BYTES } from '@/server/storage'
 import { decodeSignature, storeSignatureImage } from '@/server/media/signatures'
 import { verifyLocalUpload, writeLocalObject } from '@/server/storage/local'
+
+/**
+ * Bytes that really do start like a PNG. The completion step sniffs the magic
+ * number rather than trusting the declared type, so a buffer of ones is
+ * correctly refused — only a real header gets through.
+ */
+function pngBytes(size: number) {
+  const buffer = Buffer.alloc(size, 1)
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(buffer)
+  return buffer
+}
 import { createTestCompany, createTestDoor, createTestJob } from './helpers'
 
 /**
@@ -78,7 +89,7 @@ describe('photo upload lifecycle', () => {
     const failed = await prisma.photo.findUniqueOrThrow({ where: { id: photoId } })
     expect(failed.uploadStatus).toBe('FAILED')
 
-    await writeLocalObject(failed.storageKey, Buffer.alloc(64, 1), 'image/png')
+    await writeLocalObject(failed.storageKey, pngBytes(64), 'image/png')
     const ready = await completePhotoUpload(session, photoId)
     expect(ready.uploadStatus).toBe('READY')
     expect(ready.uploadedAt).not.toBeNull()

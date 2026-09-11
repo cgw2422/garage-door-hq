@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { getAuthenticatedUser } from '@/lib/session'
+import { getAuthenticatedUser, landingFor } from '@/lib/session'
 import { Logo } from '@/components/ui/logo'
 import { ButtonLink } from '@/components/ui/button'
 import {
@@ -36,7 +36,7 @@ const CAPABILITIES = [
 
 export default async function MarketingPage() {
   const user = await getAuthenticatedUser()
-  if (user) redirect(user.hasOrganization ? '/today' : '/onboarding/company')
+  if (user) redirect(landingFor(user))
 
   return (
     <main className="min-h-dvh bg-navy-950 text-white">
