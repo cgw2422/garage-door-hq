@@ -1,5 +1,6 @@
 import { cache } from 'react'
 import { redirect } from 'next/navigation'
+import { RESTRICTED_MESSAGE, accessStateFor, type AccessState } from '@/server/billing/access'
 import type { OrgRole, PlatformRole } from '@prisma/client'
 import { auth } from './auth'
 import { prisma } from './db'
@@ -171,6 +172,66 @@ export async function requireSession(): Promise<AppSession> {
 export async function requirePermission(permission: Permission): Promise<AppSession> {
   const session = await requireSession()
   if (!roleCan(session.role, permission)) throw new ForbiddenError(permission)
+  return session
+}
+
+/**
+ * The account's subscription standing, resolved once per request.
+ *
+ * Kept separate from the session so the common path — reading a page — does
+ * not pay for it, and so the rule lives in one pure function
+ * (`accessStateFor`) that can be tested without a request.
+ */
+export const getAccessState = cache(async (): Promise<AccessState> => {
+  const session = await getSession()
+  if (!session) return accessStateFor(null)
+
+  const subscription = await prisma.subscription.findUnique({
+    where: { organizationId: session.organizationId },
+    select: {
+      status: true,
+      trialEndsAt: true,
+      currentPeriodEnd: true,
+      complimentaryUntil: true,
+      cancelledAt: true,
+    },
+  })
+  return accessStateFor(subscription)
+})
+
+/**
+ * Thrown when an expired or cancelled account tries to create something.
+ *
+ * Carries the wording the owner should see. It is never a permission problem
+ * and must never read like one — their data is intact and their access is one
+ * button away.
+ */
+export class SubscriptionRequiredError extends Error {
+  readonly reason: string
+
+  constructor(reason: string) {
+    super(reason)
+    this.name = 'SubscriptionRequiredError'
+    this.reason = reason
+  }
+}
+
+/**
+ * Use in place of `requirePermission` for anything that creates or
+ * substantially changes operational data.
+ *
+ * Reads stay open on a lapsed account, always: the promise is that the data is
+ * safe and visible, and a read-only product that hides your customer list is
+ * not read-only, it is a hostage situation.
+ */
+export async function requireActiveSubscription(
+  permission: Permission,
+): Promise<AppSession> {
+  const session = await requirePermission(permission)
+  const access = await getAccessState()
+  if (access.level !== 'full') {
+    throw new SubscriptionRequiredError(access.restrictionReason ?? RESTRICTED_MESSAGE)
+  }
   return session
 }
 

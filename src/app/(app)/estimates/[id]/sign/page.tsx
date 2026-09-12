@@ -37,7 +37,7 @@ export default async function SignEstimatePage({
     <>
       <PageHeader
         title={estimate.title ?? 'Your Options'}
-        subtitle={`${formatEstimateNumber(estimate.number)} · ${customerName}`}
+        subtitle={`${formatEstimateNumber(estimate)} · ${customerName}`}
         backHref={`/estimates/${estimate.id}`}
       />
       <PresentAndSign

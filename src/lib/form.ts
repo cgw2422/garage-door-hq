@@ -1,4 +1,5 @@
 import type { z } from 'zod'
+import { isFrameworkControlFlow, userMessage } from './errors'
 
 /** Shape every server action returns to a `useActionState` form. */
 export interface FormState {
@@ -52,14 +53,21 @@ export function parseForm<T extends z.ZodTypeAny>(
   }
 }
 
-/** Turn a thrown domain error into a message a technician can act on. */
-export function failure(error: unknown, formData?: FormData): FormState {
-  const message =
-    error instanceof Error && error.name !== 'Error'
-      ? error.message
-      : 'Something went wrong. Try that again.'
-  if (error instanceof Error && error.name === 'Error') {
-    console.error('[action] unexpected error', error)
+/**
+ * Turn a thrown domain error into a message a technician can act on.
+ *
+ * The translation itself lives in `errors.ts`, behind an allowlist: only
+ * messages this codebase wrote on purpose are shown. A Prisma constraint
+ * violation, a Stripe developer message or a storage error is logged and
+ * replaced, never rendered.
+ *
+ * Redirects are thrown by Next.js and must pass straight through — catching
+ * one here would turn a working redirect into "something went wrong".
+ */
+export function failure(error: unknown, formData?: FormData, context?: string): FormState {
+  if (isFrameworkControlFlow(error)) throw error
+  return {
+    error: userMessage(error, context ?? 'action'),
+    values: formData ? formValues(formData) : undefined,
   }
-  return { error: message, values: formData ? formValues(formData) : undefined }
 }

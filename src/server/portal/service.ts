@@ -218,6 +218,7 @@ export async function loadPortalEstimate(link: ResolvedPortalLink) {
     select: {
       id: true,
       number: true,
+      displayNumber: true,
       title: true,
       status: true,
       customerMessage: true,
@@ -256,7 +257,9 @@ export async function loadPortalEstimate(link: ResolvedPortalLink) {
 
   const organization = await prisma.organization.findUniqueOrThrow({
     where: { id: link.organizationId },
-    select: { name: true, phone: true, email: true, currency: true },
+    // Only what a customer should see, plus the timezone so dates render in
+    // the company's own day rather than the server's.
+    select: { name: true, phone: true, email: true, currency: true, timezone: true },
   })
 
   return { estimate, organization }
@@ -270,6 +273,7 @@ export async function loadPortalInvoice(link: ResolvedPortalLink) {
     select: {
       id: true,
       number: true,
+      displayNumber: true,
       status: true,
       issuedAt: true,
       dueAt: true,
@@ -297,7 +301,9 @@ export async function loadPortalInvoice(link: ResolvedPortalLink) {
 
   const organization = await prisma.organization.findUniqueOrThrow({
     where: { id: link.organizationId },
-    select: { name: true, phone: true, email: true, currency: true },
+    // Only what a customer should see, plus the timezone so dates render in
+    // the company's own day rather than the server's.
+    select: { name: true, phone: true, email: true, currency: true, timezone: true },
   })
 
   return { invoice, organization }

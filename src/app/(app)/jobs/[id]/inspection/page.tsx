@@ -56,7 +56,7 @@ export default async function InspectionPage({ params }: { params: Promise<{ id:
     <>
       <PageHeader
         title="Inspection"
-        subtitle={`${formatJobNumber(job.number)} · ${job.customer.companyName ?? `${job.customer.firstName} ${job.customer.lastName}`}`}
+        subtitle={`${formatJobNumber(job)} · ${job.customer.companyName ?? `${job.customer.firstName} ${job.customer.lastName}`}`}
         backHref={`/jobs/${job.id}`}
       />
       <InspectionChecklist

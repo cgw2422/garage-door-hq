@@ -20,6 +20,7 @@ type View = 'day' | 'week' | 'upcoming'
 interface ScheduleJob {
   id: string
   number: number
+  displayNumber: string | null
   status: JobStatus
   scheduledStart: string | null
   scheduledEnd: string | null
@@ -405,7 +406,7 @@ function ListCard({
         </Link>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
           <JobStatusChip status={job.status} />
-          <span className="num text-xs text-ink-subtle">{formatJobNumber(job.number)}</span>
+          <span className="num text-xs text-ink-subtle">{formatJobNumber(job)}</span>
         </div>
       </div>
 

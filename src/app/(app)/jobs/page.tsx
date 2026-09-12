@@ -86,7 +86,7 @@ export default async function JobsPage({
                       <span className="num text-xs font-medium text-ink-subtle">
                         {job.scheduledStart
                           ? `${formatDate(job.scheduledStart, session.timezone, { year: undefined })} · ${formatTime(job.scheduledStart, session.timezone)}`
-                          : formatJobNumber(job.number)}
+                          : formatJobNumber(job)}
                       </span>
                     </div>
                   }

@@ -8,6 +8,9 @@ import { Alert } from '@/components/ui/alert'
 import { Card, Divider } from '@/components/ui/card'
 import { Chip } from '@/components/ui/status'
 import { DocumentIcon } from '@/components/ui/icons'
+import { formatDate } from '@/server/jobs/queries'
+import { payableInvoice } from '@/server/billing/customer-payments'
+import { PayInvoiceButton } from './pay-button'
 
 export const metadata: Metadata = { title: 'Your invoice', robots: { index: false } }
 export const dynamic = 'force-dynamic'
@@ -59,6 +62,11 @@ export default async function PortalInvoicePage({
 
   const { invoice, organization } = loaded
   const currency = organization.currency
+
+  // Card payment is offered only when the company's own Stripe account is
+  // connected and live. A half-onboarded account must never be shown to a
+  // customer as a payment option.
+  const payable = invoice.balanceCents > 0 ? Boolean(await payableInvoice(invoice.id)) : false
   const customerName =
     invoice.customer.companyName ??
     `${invoice.customer.firstName} ${invoice.customer.lastName}`
@@ -81,7 +89,7 @@ export default async function PortalInvoicePage({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[0.6875rem] font-bold uppercase tracking-[0.14em] text-ink-subtle">
-              Invoice {formatInvoiceNumber(invoice.number)}
+              Invoice {formatInvoiceNumber(invoice)}
             </p>
             <p
               className={`num mt-1 text-3xl font-bold leading-none ${
@@ -111,7 +119,7 @@ export default async function PortalInvoicePage({
 
         {invoice.dueAt ? (
           <p className="mt-2 text-sm text-ink-muted">
-            Due {new Date(invoice.dueAt).toLocaleDateString()}
+            Due {formatDate(new Date(invoice.dueAt), organization.timezone)}
           </p>
         ) : null}
       </Card>
@@ -185,7 +193,7 @@ export default async function PortalInvoicePage({
               <li key={index} className="flex items-center justify-between gap-3 text-sm">
                 <span className="text-ink-muted">
                   {payment.method.charAt(0) + payment.method.slice(1).toLowerCase()} ·{' '}
-                  {new Date(payment.receivedAt).toLocaleDateString()}
+                  {formatDate(new Date(payment.receivedAt), organization.timezone)}
                 </span>
                 <span className="num font-semibold text-success-600">
                   {formatCents(payment.amountCents, { currency })}
@@ -213,11 +221,17 @@ export default async function PortalInvoicePage({
       </a>
 
       {invoice.balanceCents > 0 ? (
-        <p className="mt-4 text-center text-sm leading-relaxed text-ink-muted">
-          To pay, contact {organization.name}
-          {organization.phone ? ` on ${organization.phone}` : ''}. Online card payment is coming
-          soon.
-        </p>
+        payable ? (
+          <PayInvoiceButton
+            token={token}
+            amountLabel={formatCents(invoice.balanceCents, { currency })}
+          />
+        ) : (
+          <p className="mt-4 text-center text-sm leading-relaxed text-ink-muted">
+            To pay, contact {organization.name}
+            {organization.phone ? ` on ${organization.phone}` : ''}.
+          </p>
+        )
       ) : null}
 
       <p className="mt-6 text-center text-xs text-ink-subtle">This link is private to you.</p>

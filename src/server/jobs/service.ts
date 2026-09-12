@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db'
-import { nextNumber } from '@/lib/numbering'
+import { nextIdentifier } from '@/lib/numbering'
 import { recordAudit } from '@/lib/audit'
 import type { AppSession } from '@/lib/session'
 
@@ -44,11 +44,16 @@ export async function createJob(session: AppSession, input: CreateJobInput) {
   }
 
   const job = await prisma.$transaction(async (tx) => {
-    const number = await nextNumber(tx, session.organizationId, 'JOB')
+    const { number, displayNumber } = await nextIdentifier(
+      tx,
+      session.organizationId,
+      'JOB',
+    )
     return tx.job.create({
       data: {
         organizationId: session.organizationId,
         number,
+        displayNumber,
         customerId: input.customerId,
         propertyId: input.propertyId,
         doorId: input.doorId ?? null,

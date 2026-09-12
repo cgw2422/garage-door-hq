@@ -136,7 +136,7 @@ export default async function PropertyPage({ params }: { params: Promise<{ id: s
                     <ListRow
                       href={`/doors/${door.id}`}
                       leading={<DoorIcon className="h-5 w-5 text-ink-subtle" />}
-                      title={door.nickname ?? door.positionLabel ?? formatDoorNumber(door.number)}
+                      title={door.nickname ?? door.positionLabel ?? formatDoorNumber(door)}
                       subtitle={[
                         formatDoorSize(door.widthInches, door.heightInches),
                         door.manufacturer,

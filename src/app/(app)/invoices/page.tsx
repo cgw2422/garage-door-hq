@@ -42,7 +42,7 @@ export default async function InvoicesPage() {
                     invoice.customer.companyName ??
                     `${invoice.customer.firstName} ${invoice.customer.lastName}`
                   }
-                  subtitle={`${formatInvoiceNumber(invoice.number)}${
+                  subtitle={`${formatInvoiceNumber(invoice)}${
                     invoice.issuedAt
                       ? ` · ${formatDate(invoice.issuedAt, session.timezone)}`
                       : ''

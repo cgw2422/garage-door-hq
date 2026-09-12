@@ -1,6 +1,6 @@
 import { Prisma, type InvoiceStatus } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { nextNumber } from '@/lib/numbering'
+import { nextIdentifier } from '@/lib/numbering'
 import { recordAudit } from '@/lib/audit'
 import { taxCentsFor } from '@/lib/money'
 import type { AppSession } from '@/lib/session'
@@ -42,7 +42,11 @@ export async function createInvoiceFromEstimateTx(
   }
 
   const option = estimate.selectedOption
-  const number = await nextNumber(tx, params.organizationId, 'INVOICE')
+  const { number, displayNumber } = await nextIdentifier(
+    tx,
+    params.organizationId,
+    'INVOICE',
+  )
   const organization = await tx.organization.findUniqueOrThrow({
     where: { id: params.organizationId },
     select: { invoiceTermsText: true },
@@ -65,6 +69,7 @@ export async function createInvoiceFromEstimateTx(
     data: {
       organizationId: params.organizationId,
       number,
+      displayNumber,
       jobId: params.jobId,
       estimateId: estimate.id,
       customerId: estimate.customerId,
@@ -126,7 +131,11 @@ export async function createInvoiceFromLinesTx(
     throw new InvoiceError('There is nothing to invoice on this job yet.')
   }
 
-  const number = await nextNumber(tx, params.organizationId, 'INVOICE')
+  const { number, displayNumber } = await nextIdentifier(
+    tx,
+    params.organizationId,
+    'INVOICE',
+  )
   const organization = await tx.organization.findUniqueOrThrow({
     where: { id: params.organizationId },
     select: { invoiceTermsText: true },
@@ -146,6 +155,7 @@ export async function createInvoiceFromLinesTx(
     data: {
       organizationId: params.organizationId,
       number,
+      displayNumber,
       jobId: params.jobId,
       customerId: params.customerId,
       status: 'DRAFT',

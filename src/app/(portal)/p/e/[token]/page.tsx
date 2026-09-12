@@ -45,7 +45,7 @@ export default async function PortalEstimatePage({
       companyName={organization.name}
       companyPhone={organization.phone}
       currency={organization.currency}
-      estimateNumber={formatEstimateNumber(estimate.number)}
+      estimateNumber={formatEstimateNumber(estimate)}
       title={estimate.title}
       customerName={
         estimate.customer.companyName ??

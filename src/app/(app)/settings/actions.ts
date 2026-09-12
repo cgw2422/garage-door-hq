@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/session'
 import { recordAudit } from '@/lib/audit'
 import { failure, parseForm, type FormState } from '@/lib/form'
 import { beginLogoUpload, completeLogoUpload, removeLogo } from '@/server/media/logo'
+import { DEFAULT_PREFIX, assertValidPrefix } from '@/lib/numbering'
 import { ALLOWED_IMAGE_TYPES } from '@/server/storage'
 
 const companySchema = z.object({
@@ -223,20 +224,19 @@ export async function removeLogoAction() {
 const numberingSchema = z.object({
   entity: z.enum(['JOB', 'ESTIMATE', 'INVOICE', 'DOOR', 'CUSTOMER']),
   nextValue: z.coerce.number().int().min(1).max(9_999_999),
+  prefix: z.string().max(16).optional(),
 })
 
 /**
- * The starting number for the next document of each kind.
+ * How the next document of each kind is labelled.
  *
- * It only moves forward: lowering it would hand out a number an existing
- * document already carries and collide on the per-organization uniqueness
- * constraint.
+ * The number only moves forward: lowering it would hand out a number an
+ * existing document already carries and collide on the per-organization
+ * uniqueness constraint.
  *
- * Custom prefixes ("GD-" instead of "INV-") are deliberately not editable yet.
- * Doing that consistently means storing the rendered number on each document
- * so a later prefix change cannot appear to renumber past invoices — a schema
- * change worth making on its own rather than halfway through this one. The
- * column exists and is unused.
+ * The prefix applies to records created from here on. Every existing record
+ * stored the identifier it was issued under, so changing "INV-" to "GD-"
+ * cannot make an invoice a customer already holds appear to be renumbered.
  */
 export async function saveNumberingAction(
   _prev: FormState,
@@ -261,6 +261,19 @@ export async function saveNumberingAction(
     }
   }
 
+  let prefix: string | null = null
+  try {
+    const typed = parsed.data.prefix?.trim() ?? ''
+    // A prefix matching the built-in one is stored as null, so a company that
+    // never changed it keeps following the default if the default ever moves.
+    prefix =
+      typed.length === 0 || typed === DEFAULT_PREFIX[parsed.data.entity]
+        ? null
+        : assertValidPrefix(typed)
+  } catch (error) {
+    return failure(error, formData)
+  }
+
   try {
     await session.db.numberSequence.update({
       where: {
@@ -269,11 +282,21 @@ export async function saveNumberingAction(
           entity: parsed.data.entity,
         },
       },
-      data: { nextValue: parsed.data.nextValue },
+      data: { nextValue: parsed.data.nextValue, prefix },
     })
   } catch (error) {
     return failure(error, formData)
   }
+
+  await recordAudit({
+    organizationId: session.organizationId,
+    actorUserId: session.userId,
+    action: 'organization.numbering_updated',
+    entityType: 'NumberSequence',
+    entityId: parsed.data.entity,
+    before: { nextValue: current?.nextValue ?? null, prefix: current?.prefix ?? null },
+    after: { nextValue: parsed.data.nextValue, prefix },
+  })
 
   revalidatePath('/settings')
   return { values: { saved: 'yes' } }

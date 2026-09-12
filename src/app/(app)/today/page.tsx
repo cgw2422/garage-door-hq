@@ -1,11 +1,12 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { requireSession } from '@/lib/session'
+import { getAccessState, requireSession } from '@/lib/session'
 import { directionsHref, formatTime, greeting, loadToday } from '@/server/jobs/queries'
 import { formatCentsShort } from '@/lib/money'
 import { formatJobNumber } from '@/lib/numbering'
 import { lowStockForLocation } from '@/server/inventory/ledger'
 import { PageBody, PageHeader } from '@/components/app/page-header'
+import { BillingBanner } from '@/components/app/billing-banner'
 import { ButtonLink, CircleAction } from '@/components/ui/button'
 import { Card, CardHeader, Divider, EmptyState, ListRow, SectionHeading } from '@/components/ui/card'
 import { RevenueTile, StatRow, StatTile } from '@/components/ui/stat'
@@ -28,6 +29,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function TodayPage() {
   const session = await requireSession()
+  const access = await getAccessState()
   const today = await loadToday(session)
   const lowStock = session.defaultLocationId
     ? await lowStockForLocation(session.organizationId, session.defaultLocationId)
@@ -53,6 +55,8 @@ export default async function TodayPage() {
       />
 
       <PageBody>
+        <BillingBanner access={access} />
+
         <RevenueTile
           label="Today's Revenue"
           value={formatCentsShort(today.revenueCents, session.currency)}
@@ -94,7 +98,7 @@ export default async function TodayPage() {
                 <div className="flex shrink-0 flex-col items-end gap-2">
                   <JobStatusChip status={next.status} />
                   <span className="text-xs font-medium text-ink-subtle">
-                    {formatJobNumber(next.number)}
+                    {formatJobNumber(next)}
                   </span>
                 </div>
               </div>

@@ -24,6 +24,9 @@ const AUTH_GATES = [
   'requirePermission',
   'requirePlatformStaff',
   'requireUser',
+  // The subscription gate calls requirePermission underneath, so it is a
+  // strictly stronger check, not a way around one.
+  'requireActiveSubscription',
   'getSession',
   'getAuthenticatedUser',
   'auth(',
@@ -48,6 +51,8 @@ const PUBLIC_BY_DESIGN: Record<string, string> = {
     'Customer invoice PDF, reached only through the opaque token.',
   'src/app/api/files/upload/[token]/route.ts':
     'Local-disk development upload target; the HMAC-signed token is the credential.',
+  'src/app/api/webhooks/stripe/route.ts':
+    'Stripe has no session. Authenticated by its signature over the exact request bytes, which is verified before the body is parsed as anything.',
 }
 
 /**
@@ -59,6 +64,12 @@ const PUBLIC_ACTIONS: Record<string, string> = {
     'The invitee has no account yet; the emailed token is the credential, and guessing is rate limited.',
   'src/app/(app)/more/actions.ts: signOutAction':
     'Ending a session protects nothing; a caller with no session simply has nothing to end.',
+  'src/app/(auth)/forgot/actions.ts: requestResetAction':
+    'Asking for a reset link needs no account, by definition. Rate limited by address and by mailbox, and it answers identically whether or not the address exists.',
+  'src/app/(portal)/p/actions.ts: portalStartPaymentAction':
+    'The customer paying an invoice has no account; the opaque single-document token is the credential.',
+  'src/app/(auth)/reset/[token]/actions.ts: completeResetAction':
+    'Someone who has forgotten their password cannot be signed in. The single-use hashed reset token is the credential, guessing it is rate limited, and using it invalidates every session the account had.',
 }
 
 function walk(dir: string, matcher: (path: string) => boolean): string[] {

@@ -25,9 +25,9 @@ export async function generateMetadata({
   const { id } = await params
   const invoice = await session.db.invoice.findUnique({
     where: { id },
-    select: { number: true },
+    select: { number: true, displayNumber: true },
   })
-  return { title: invoice ? formatInvoiceNumber(invoice.number) : 'Invoice' }
+  return { title: invoice ? formatInvoiceNumber(invoice) : 'Invoice' }
 }
 
 export default async function InvoicePage({
@@ -46,7 +46,7 @@ export default async function InvoicePage({
     where: { id },
     include: {
       customer: true,
-      job: { select: { id: true, number: true } },
+      job: { select: { id: true, number: true, displayNumber: true } },
       items: { orderBy: { sortOrder: 'asc' } },
       payments: { orderBy: { receivedAt: 'desc' } },
     },
@@ -60,7 +60,7 @@ export default async function InvoicePage({
   return (
     <>
       <PageHeader
-        title={formatInvoiceNumber(invoice.number)}
+        title={formatInvoiceNumber(invoice)}
         subtitle={customerName}
         backHref={invoice.job ? `/jobs/${invoice.job.id}` : '/money'}
         action={<InvoiceStatusChip status={invoice.status} />}
@@ -90,7 +90,7 @@ export default async function InvoicePage({
                   href={`/jobs/${invoice.job.id}`}
                   className="mt-1 inline-block font-semibold text-brand-600"
                 >
-                  {formatJobNumber(invoice.job.number)}
+                  {formatJobNumber(invoice.job)}
                 </Link>
               ) : null}
             </div>

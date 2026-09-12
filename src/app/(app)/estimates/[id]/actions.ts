@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
-import { requirePermission } from '@/lib/session'
+import { requireActiveSubscription } from '@/lib/session'
 import { failure, parseForm, type FormState } from '@/lib/form'
 import {
   addCatalogItemToEstimate,
@@ -27,7 +27,7 @@ const addPackageSchema = z.object({
 })
 
 export async function addPackageAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const session = await requirePermission('estimate:write')
+  const session = await requireActiveSubscription('estimate:write')
   const parsed = parseForm(addPackageSchema, formData)
   if (!parsed.ok) return parsed.state
 
@@ -48,7 +48,7 @@ const addItemSchema = z.object({
 })
 
 export async function addItemAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const session = await requirePermission('estimate:write')
+  const session = await requireActiveSubscription('estimate:write')
   const parsed = parseForm(addItemSchema, formData)
   if (!parsed.ok) return parsed.state
 
@@ -62,19 +62,19 @@ export async function addItemAction(_prev: FormState, formData: FormData): Promi
 }
 
 export async function removeItemAction(input: { estimateId: string; itemId: string }) {
-  const session = await requirePermission('estimate:write')
+  const session = await requireActiveSubscription('estimate:write')
   await removeEstimateItem(session, input.itemId)
   refresh(input.estimateId)
 }
 
 export async function removeOptionAction(input: { estimateId: string; optionId: string }) {
-  const session = await requirePermission('estimate:write')
+  const session = await requireActiveSubscription('estimate:write')
   await removeEstimateOption(session, input.optionId)
   refresh(input.estimateId)
 }
 
 export async function setRecommendedAction(input: { estimateId: string; optionId: string }) {
-  const session = await requirePermission('estimate:write')
+  const session = await requireActiveSubscription('estimate:write')
   await setRecommendedOption(session, input.optionId)
   refresh(input.estimateId)
 }
@@ -84,7 +84,7 @@ export async function setQuantityAction(input: {
   itemId: string
   quantity: number
 }) {
-  const session = await requirePermission('estimate:write')
+  const session = await requireActiveSubscription('estimate:write')
   await updateEstimateItemQuantity(session, { itemId: input.itemId, quantity: input.quantity })
   refresh(input.estimateId)
 }
@@ -97,7 +97,7 @@ const taxSchema = z.object({
 })
 
 export async function setTaxRateAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const session = await requirePermission('estimate:write')
+  const session = await requireActiveSubscription('estimate:write')
   const parsed = parseForm(taxSchema, formData)
   if (!parsed.ok) return parsed.state
 
@@ -115,7 +115,7 @@ export async function setTaxRateAction(_prev: FormState, formData: FormData): Pr
 }
 
 export async function presentEstimateAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const session = await requirePermission('estimate:write')
+  const session = await requireActiveSubscription('estimate:write')
   const estimateId = String(formData.get('estimateId') ?? '')
 
   try {

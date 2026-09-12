@@ -36,8 +36,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const session = await requireSession()
   const { id } = await params
-  const job = await session.db.job.findUnique({ where: { id }, select: { number: true } })
-  return { title: job ? formatJobNumber(job.number) : 'Job' }
+  const job = await session.db.job.findUnique({ where: { id }, select: { number: true, displayNumber: true } })
+  return { title: job ? formatJobNumber(job) : 'Job' }
 }
 
 export default async function JobDetailPage({
@@ -98,7 +98,7 @@ export default async function JobDetailPage({
   return (
     <>
       <PageHeader
-        title={formatJobNumber(job.number)}
+        title={formatJobNumber(job)}
         subtitle={job.jobType?.name ?? 'Service call'}
         backHref="/jobs"
         action={<JobStatusChip status={job.status} />}
@@ -233,7 +233,7 @@ export default async function JobDetailPage({
                     {index > 0 ? <Divider className="ml-4" /> : null}
                     <ListRow
                       href={`/estimates/${estimate.id}`}
-                      title={estimate.title ?? formatEstimateNumber(estimate.number)}
+                      title={estimate.title ?? formatEstimateNumber(estimate)}
                       subtitle={
                         estimate.selectedOption
                           ? `${estimate.selectedOption.name} selected`
@@ -264,7 +264,7 @@ export default async function JobDetailPage({
                     {index > 0 ? <Divider className="ml-4" /> : null}
                     <ListRow
                       href={`/invoices/${invoice.id}`}
-                      title={formatInvoiceNumber(invoice.number)}
+                      title={formatInvoiceNumber(invoice)}
                       subtitle={
                         invoice.balanceCents > 0
                           ? `${formatCents(invoice.balanceCents, { currency: session.currency })} outstanding`

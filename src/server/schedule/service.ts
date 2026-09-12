@@ -22,6 +22,7 @@ export class ScheduleError extends Error {
 export interface ScheduledJob {
   id: string
   number: number
+  displayNumber: string | null
   status: JobStatus
   scheduledStart: Date | null
   scheduledEnd: Date | null
@@ -80,6 +81,7 @@ export async function loadSchedule(
   return jobs.map((job) => ({
     id: job.id,
     number: job.number,
+    displayNumber: job.displayNumber,
     status: job.status,
     scheduledStart: job.scheduledStart,
     scheduledEnd: job.scheduledEnd,

@@ -49,6 +49,11 @@ const TENANT_MODELS = new Set<string>([
   'Invitation',
   'AuditLog',
   'NumberSequence',
+  'PaymentAccount',
+  // Webhook rows are written by the unauthenticated webhook route through
+  // `unscopedDb` — the organization is resolved from the payload, not a
+  // session. Listing it here scopes the reads the app itself makes.
+  'WebhookEvent',
   'Subscription',
   'Referral',
 ])

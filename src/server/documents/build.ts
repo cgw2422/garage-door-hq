@@ -99,6 +99,7 @@ export async function buildEstimateDocument(params: {
       job: {
         select: {
           number: true,
+          displayNumber: true,
           property: true,
           door: {
             select: {
@@ -150,7 +151,10 @@ export async function buildEstimateDocument(params: {
 
     return {
       kind: 'estimate',
-      number: formatEstimateNumber(snapshot.estimateNumber ?? estimate.number),
+      number: formatEstimateNumber({
+        number: snapshot.estimateNumber ?? estimate.number,
+        displayNumber: snapshot.estimateDisplayNumber ?? estimate.displayNumber,
+      }),
       title: snapshot.title ?? estimate.title ?? 'Estimate',
       issuedAt: (estimate.sentAt ?? version.createdAt).toISOString(),
       expiresAt: snapshot.expiresAt ?? null,
@@ -162,7 +166,12 @@ export async function buildEstimateDocument(params: {
       customer: customerParty(snapshot.customer),
       serviceAddress: addressLines(snapshot.property ?? estimate.job?.property ?? null),
       doorLine: doorLine(snapshot.door),
-      jobReference: snapshot.jobNumber ? formatJobNumber(snapshot.jobNumber) : null,
+      jobReference: snapshot.jobNumber
+        ? formatJobNumber({
+            number: snapshot.jobNumber,
+            displayNumber: snapshot.jobDisplayNumber ?? null,
+          })
+        : null,
       customerMessage: snapshot.customerMessage ?? null,
       termsText: snapshot.termsText ?? null,
       taxRateBps: snapshot.taxRateBps ?? estimate.taxRateBps,
@@ -188,7 +197,7 @@ export async function buildEstimateDocument(params: {
   // No version yet: this has never left the building.
   return {
     kind: 'estimate',
-    number: formatEstimateNumber(estimate.number),
+    number: formatEstimateNumber(estimate),
     title: estimate.title ?? 'Estimate',
     issuedAt: estimate.createdAt.toISOString(),
     expiresAt: estimate.expiresAt?.toISOString() ?? null,
@@ -211,7 +220,7 @@ export async function buildEstimateDocument(params: {
           heightInches: estimate.job.door.heightInches,
         })
       : null,
-    jobReference: estimate.job ? formatJobNumber(estimate.job.number) : null,
+    jobReference: estimate.job ? formatJobNumber(estimate.job) : null,
     customerMessage: estimate.customerMessage,
     termsText: estimate.termsText,
     taxRateBps: estimate.taxRateBps,
@@ -242,12 +251,14 @@ export async function buildEstimateDocument(params: {
 
 interface SnapshotShape {
   estimateNumber?: number
+  estimateDisplayNumber?: string | null
   title?: string | null
   customerMessage?: string | null
   termsText?: string | null
   taxRateBps?: number
   expiresAt?: string | null
   jobNumber?: number | null
+  jobDisplayNumber?: string | null
   organization?: Parameters<typeof companyParty>[0]
   customer?: {
     firstName?: string
@@ -341,10 +352,11 @@ export async function buildInvoiceDocument(params: {
       customer: true,
       items: { orderBy: { sortOrder: 'asc' } },
       payments: { where: { status: 'SUCCEEDED' }, orderBy: { receivedAt: 'asc' } },
-      estimate: { select: { number: true } },
+      estimate: { select: { number: true, displayNumber: true } },
       job: {
         select: {
           number: true,
+          displayNumber: true,
           property: true,
           door: {
             select: {
@@ -370,7 +382,7 @@ export async function buildInvoiceDocument(params: {
 
   return {
     kind: 'invoice',
-    number: formatInvoiceNumber(invoice.number),
+    number: formatInvoiceNumber(invoice),
     issuedAt: invoice.issuedAt?.toISOString() ?? null,
     dueAt: invoice.dueAt?.toISOString() ?? null,
     status: invoice.status,
@@ -397,8 +409,8 @@ export async function buildInvoiceDocument(params: {
           heightInches: invoice.job.door.heightInches,
         })
       : null,
-    jobReference: invoice.job ? formatJobNumber(invoice.job.number) : null,
-    estimateReference: invoice.estimate ? formatEstimateNumber(invoice.estimate.number) : null,
+    jobReference: invoice.job ? formatJobNumber(invoice.job) : null,
+    estimateReference: invoice.estimate ? formatEstimateNumber(invoice.estimate) : null,
     notesToCustomer: invoice.notesToCustomer,
     termsText: invoice.termsText,
     taxRateBps: invoice.taxRateBps,

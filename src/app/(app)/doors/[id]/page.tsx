@@ -26,11 +26,11 @@ export async function generateMetadata({
   const { id } = await params
   const door = await session.db.door.findUnique({
     where: { id },
-    select: { nickname: true, positionLabel: true, number: true },
+    select: { nickname: true, positionLabel: true, number: true, displayNumber: true },
   })
   return {
     title: door
-      ? (door.nickname ?? door.positionLabel ?? formatDoorNumber(door.number))
+      ? (door.nickname ?? door.positionLabel ?? formatDoorNumber(door))
       : 'Door Passport',
   }
 }
@@ -84,13 +84,13 @@ export default async function DoorPassportPage({
   const currentSprings = door.springSystems.find((system) => system.isCurrent) ?? null
   const historicalSprings = door.springSystems.filter((system) => !system.isCurrent)
   const currentOpener = door.openers.find((opener) => opener.isCurrent) ?? null
-  const displayName = door.nickname ?? door.positionLabel ?? formatDoorNumber(door.number)
+  const displayName = door.nickname ?? door.positionLabel ?? formatDoorNumber(door)
 
   return (
     <>
       <PageHeader
         title={displayName}
-        subtitle={`${formatDoorNumber(door.number)} · ${door.property.nickname ?? door.property.line1}`}
+        subtitle={`${formatDoorNumber(door)} · ${door.property.nickname ?? door.property.line1}`}
         backHref={`/properties/${door.propertyId}`}
         action={
           <Link
@@ -116,7 +116,7 @@ export default async function DoorPassportPage({
                 {door.property.line1}, {door.property.city}
               </p>
             </div>
-            <Chip tone="brand">{formatDoorNumber(door.number)}</Chip>
+            <Chip tone="brand">{formatDoorNumber(door)}</Chip>
           </div>
 
           <Divider className="mb-3" />
@@ -357,7 +357,7 @@ export default async function DoorPassportPage({
                     subtitle={
                       job.scheduledStart
                         ? formatDate(job.scheduledStart, session.timezone)
-                        : formatJobNumber(job.number)
+                        : formatJobNumber(job)
                     }
                     trailing={<JobStatusChip status={job.status} />}
                   />

@@ -98,6 +98,7 @@ export async function snapshotEstimate(params: {
         job: {
           select: {
             number: true,
+            displayNumber: true,
             property: {
               select: { nickname: true, line1: true, line2: true, city: true, state: true, postalCode: true },
             },
@@ -134,6 +135,9 @@ export async function snapshotEstimate(params: {
 
     const snapshot = {
       estimateNumber: estimate.number,
+      // The identifier the customer is looking at. Frozen with everything
+      // else, so a later prefix change cannot restate a signed document.
+      estimateDisplayNumber: estimate.displayNumber,
       title: estimate.title,
       customerMessage: estimate.customerMessage,
       termsText: estimate.termsText,
@@ -150,6 +154,7 @@ export async function snapshotEstimate(params: {
       // The address the work happens at and the door it happens to, captured
       // here so a PDF of a signed estimate never has to re-read live records.
       jobNumber: estimate.job?.number ?? null,
+      jobDisplayNumber: estimate.job?.displayNumber ?? null,
       property: estimate.job?.property ?? null,
       door: estimate.job?.door
         ? {

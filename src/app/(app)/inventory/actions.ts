@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
-import { requirePermission } from '@/lib/session'
+import { requireActiveSubscription } from '@/lib/session'
 import { failure, parseForm, type FormState } from '@/lib/form'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import {
@@ -36,7 +36,7 @@ export async function adjustStockAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const session = await requirePermission('inventory:adjust')
+  const session = await requireActiveSubscription('inventory:adjust')
   const parsed = parseForm(adjustSchema, formData)
   if (!parsed.ok) return parsed.state
 
@@ -64,7 +64,7 @@ export async function transferStockAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const session = await requirePermission('inventory:transfer')
+  const session = await requireActiveSubscription('inventory:transfer')
   const parsed = parseForm(transferSchema, formData)
   if (!parsed.ok) return parsed.state
 
@@ -91,7 +91,7 @@ export async function addStockedItemAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const session = await requirePermission('inventory:adjust')
+  const session = await requireActiveSubscription('inventory:adjust')
   const parsed = parseForm(addSchema, formData)
   if (!parsed.ok) return parsed.state
 
@@ -116,7 +116,7 @@ export async function setMinimumAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const session = await requirePermission('inventory:adjust')
+  const session = await requireActiveSubscription('inventory:adjust')
   const parsed = parseForm(minimumSchema, formData)
   if (!parsed.ok) return parsed.state
 

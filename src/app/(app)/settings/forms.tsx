@@ -8,6 +8,9 @@ import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Field, Input, Select, Textarea } from '@/components/ui/field'
 import { SubmitButton } from '@/components/ui/submit-button'
+// numbering.ts has only type-level imports, so it is safe in a client bundle.
+import { DEFAULT_PREFIX } from '@/lib/numbering'
+import type { SequenceEntity } from '@prisma/client'
 import {
   beginLogoUploadAction,
   completeLogoUploadAction,
@@ -341,28 +344,37 @@ const ENTITY_LABELS: Record<string, string> = {
 export function NumberingForm({
   sequences,
 }: {
-  sequences: Array<{ entity: string; nextValue: number }>
+  sequences: Array<{ entity: SequenceEntity; nextValue: number; prefix: string | null }>
 }) {
   const [state, formAction] = useActionState<FormState, FormData>(saveNumberingAction, {})
-  const [entity, setEntity] = useState(sequences[0]?.entity ?? 'INVOICE')
+  const [entity, setEntity] = useState<SequenceEntity>(sequences[0]?.entity ?? 'INVOICE')
   const current = sequences.find((sequence) => sequence.entity === entity)
+  const prefix = current?.prefix ?? DEFAULT_PREFIX[entity] ?? ''
 
   return (
     <form action={formAction} className="space-y-4">
       <p className="text-sm text-ink-muted">
-        Set where your next document number starts. It can only move forward — going backwards
-        would reuse a number an existing document already has.
+        How your next document is labelled. The number can only move forward — going backwards
+        would reuse one an existing document already has.
       </p>
 
+      <Field label="Record type">
+        <Select
+          name="entity"
+          value={entity}
+          onChange={(event) => setEntity(event.target.value as SequenceEntity)}
+        >
+          {sequences.map((sequence) => (
+            <option key={sequence.entity} value={sequence.entity}>
+              {ENTITY_LABELS[sequence.entity] ?? sequence.entity}
+            </option>
+          ))}
+        </Select>
+      </Field>
+
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Record type">
-          <Select name="entity" value={entity} onChange={(event) => setEntity(event.target.value)}>
-            {sequences.map((sequence) => (
-              <option key={sequence.entity} value={sequence.entity}>
-                {ENTITY_LABELS[sequence.entity] ?? sequence.entity}
-              </option>
-            ))}
-          </Select>
+        <Field label="Prefix" hint="Letters, numbers and dashes.">
+          <Input key={`${entity}-prefix`} name="prefix" defaultValue={prefix} maxLength={8} />
         </Field>
         <Field label="Next number">
           <Input
@@ -375,6 +387,11 @@ export function NumberingForm({
         </Field>
       </div>
 
+      <p className="num rounded-[--radius-control] bg-surface-sunken px-3 py-2.5 text-center text-sm font-semibold text-ink">
+        Next: {prefix}
+        {current?.nextValue ?? 1000}
+      </p>
+
       {state.error ? <Alert>{state.error}</Alert> : null}
       {state.values?.saved === 'yes' ? <Alert tone="success">Saved.</Alert> : null}
 
@@ -383,8 +400,8 @@ export function NumberingForm({
       </SubmitButton>
 
       <p className="text-xs leading-relaxed text-ink-subtle">
-        Custom prefixes are not editable yet. Doing that properly means storing the rendered
-        number on each document so changing a prefix cannot appear to renumber past invoices.
+        Changing the prefix affects records you create from now on. Documents you have already
+        sent keep the number they were issued under, so nothing a customer holds is renumbered.
       </p>
     </form>
   )

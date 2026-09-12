@@ -50,7 +50,7 @@ export default async function EstimatesPage() {
                       estimate.customer.companyName ??
                       `${estimate.customer.firstName} ${estimate.customer.lastName}`
                     }
-                    subtitle={`${formatEstimateNumber(estimate.number)} · ${formatDate(estimate.createdAt, session.timezone)}`}
+                    subtitle={`${formatEstimateNumber(estimate)} · ${formatDate(estimate.createdAt, session.timezone)}`}
                     trailing={
                       <div className="flex flex-col items-end gap-1.5">
                         <span className="num text-[0.9375rem] font-bold text-ink">

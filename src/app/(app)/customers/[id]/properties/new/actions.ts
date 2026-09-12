@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
-import { requirePermission } from '@/lib/session'
+import { requireActiveSubscription } from '@/lib/session'
 import { failure, parseForm, type FormState } from '@/lib/form'
 import { createProperty } from '@/server/customers/service'
 
@@ -22,7 +22,7 @@ export async function createPropertyAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const session = await requirePermission('customer:write')
+  const session = await requireActiveSubscription('customer:write')
   const parsed = parseForm(schema, formData)
   if (!parsed.ok) return parsed.state
 

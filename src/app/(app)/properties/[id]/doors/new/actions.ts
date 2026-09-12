@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
-import { requirePermission } from '@/lib/session'
+import { requireActiveSubscription } from '@/lib/session'
 import { failure, parseForm, type FormState } from '@/lib/form'
 import { createDoor } from '@/server/doors/service'
 
@@ -52,7 +52,7 @@ function parseDate(value?: string): Date | null {
 }
 
 export async function createDoorAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const session = await requirePermission('door:write')
+  const session = await requireActiveSubscription('door:write')
   const parsed = parseForm(schema, formData)
   if (!parsed.ok) return parsed.state
 

@@ -29,7 +29,7 @@ export default async function EditDoorPage({ params }: { params: Promise<{ id: s
     <>
       <PageHeader
         title="Edit Door Passport"
-        subtitle={door.nickname ?? door.positionLabel ?? formatDoorNumber(door.number)}
+        subtitle={door.nickname ?? door.positionLabel ?? formatDoorNumber(door)}
         backHref={`/doors/${door.id}`}
       />
       <PageBody>

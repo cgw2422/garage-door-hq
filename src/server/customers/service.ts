@@ -1,6 +1,6 @@
 import type { PropertyKind } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { nextNumber } from '@/lib/numbering'
+import { nextIdentifier } from '@/lib/numbering'
 import { recordAudit } from '@/lib/audit'
 import type { AppSession } from '@/lib/session'
 
@@ -37,12 +37,17 @@ export async function createCustomer(
   input: CustomerInput & { property?: PropertyInput },
 ) {
   const result = await prisma.$transaction(async (tx) => {
-    const number = await nextNumber(tx, session.organizationId, 'CUSTOMER')
+    const { number, displayNumber } = await nextIdentifier(
+      tx,
+      session.organizationId,
+      'CUSTOMER',
+    )
 
     const customer = await tx.customer.create({
       data: {
         organizationId: session.organizationId,
         number,
+        displayNumber,
         firstName: input.firstName.trim(),
         lastName: input.lastName.trim(),
         companyName: input.companyName?.trim() || null,

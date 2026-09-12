@@ -75,10 +75,17 @@ model User {
   homeLocations  InventoryLocation[]    @relation("LocationAssignee")
   notes          Note[]
   affiliate      Affiliate?
+  communications CommunicationLog[]
+  sentInvitations Invitation[]      @relation("InvitationInviter")
 
   @@index([platformRole])
 }
 
+/// A password reset in flight.
+///
+/// Only the SHA-256 of the token is stored, so the database never holds
+/// anything that could reset an account. Requesting a new reset revokes any
+/// outstanding one for the same user, and using one revokes the rest.
 model PasswordResetToken {
   id        String    @id @default(uuid())
   userId    String
@@ -86,11 +93,17 @@ model PasswordResetToken {
   tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
+  revokedAt DateTime?
+
+  /// Recorded for abuse investigation. Never shown to the requester, and never
+  /// used to decide whether a reset is allowed.
+  requestIp String?
   createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
+  @@index([userId, createdAt])
+  @@index([expiresAt])
 }
 
 /// A garage door company. The tenant boundary for every business record.
@@ -138,6 +151,13 @@ model Organization {
   laborCostEnabled      Boolean   @default(false)
   laborCostPerHourCents Int?
   onboardingCompletedAt DateTime?
+  /// When the owner dismissed the in-app setup checklist. The checklist itself
+  /// is computed from real state, so nothing here can claim a step is done.
+  setupChecklistDoneAt  DateTime?
+
+  /// Template for the review request email. Null uses the built-in wording.
+  reviewRequestSubject String?
+  reviewRequestBody    String?
 
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -175,6 +195,8 @@ model Organization {
   inspectionRemedies    InspectionRemedy[]
   portalLinks           PortalLink[]
   communications        CommunicationLog[]
+  paymentAccount        PaymentAccount?
+  webhookEvents         WebhookEvent[]
 }
 
 model Membership {
@@ -212,8 +234,8 @@ model Invitation {
   defaultLocationId String?
   invitedById       String?
 
-  /// Email delivery is not wired up yet, so an admin copies the link. These
-  /// record that the link was re-issued rather than that a message was sent.
+  /// When the invitation was last issued or re-issued. Whether a message
+  /// actually reached anyone is recorded on CommunicationLog, not here.
   lastSentAt DateTime @default(now())
   sendCount  Int      @default(1)
 
@@ -221,6 +243,7 @@ model Invitation {
 
   organization    Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   defaultLocation InventoryLocation? @relation("InvitationLocation", fields: [defaultLocationId], references: [id], onDelete: SetNull)
+  invitedBy       User?              @relation("InvitationInviter", fields: [invitedById], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -234,6 +257,12 @@ model Customer {
   id             String @id @default(uuid())
   organizationId String
   number         Int
+  /// The identifier as it was first shown, e.g. "INV-1008".
+  ///
+  /// Stored rather than rendered, so changing the company's prefix later
+  /// applies to new records only and can never appear to renumber a document
+  /// a customer already has. `number` remains the sortable counter.
+  displayNumber  String?
 
   firstName   String
   lastName    String
@@ -271,6 +300,7 @@ model Customer {
   @@index([organizationId, lastName])
   @@index([organizationId, phone])
   @@index([organizationId, archivedAt])
+  @@unique([organizationId, displayNumber])
 }
 
 enum PropertyKind {
@@ -344,6 +374,12 @@ model Door {
   propertyId     String
   /// Readable passport id: D-2043.
   number         Int
+  /// The identifier as it was first shown, e.g. "INV-1008".
+  ///
+  /// Stored rather than rendered, so changing the company's prefix later
+  /// applies to new records only and can never appear to renumber a document
+  /// a customer already has. `number` remains the sortable counter.
+  displayNumber  String?
 
   nickname      String?
   positionLabel String?
@@ -402,6 +438,7 @@ model Door {
   @@index([organizationId, propertyId])
   @@index([organizationId, manufacturer])
   @@index([organizationId, serialNumber])
+  @@unique([organizationId, displayNumber])
 }
 
 enum DoorEventKind {
@@ -593,6 +630,12 @@ model Job {
   organizationId String
   /// Readable: Job #1043.
   number         Int
+  /// The identifier as it was first shown, e.g. "INV-1008".
+  ///
+  /// Stored rather than rendered, so changing the company's prefix later
+  /// applies to new records only and can never appear to renumber a document
+  /// a customer already has. `number` remains the sortable counter.
+  displayNumber  String?
 
   customerId   String
   propertyId   String
@@ -650,6 +693,7 @@ model Job {
   @@index([organizationId, assignedToId, scheduledStart])
   @@index([organizationId, customerId])
   @@index([organizationId, doorId])
+  @@unique([organizationId, displayNumber])
 }
 
 /// Parts actually consumed on a job. Separate from estimate/invoice lines
@@ -993,6 +1037,12 @@ model Estimate {
   id             String @id @default(uuid())
   organizationId String
   number         Int
+  /// The identifier as it was first shown, e.g. "INV-1008".
+  ///
+  /// Stored rather than rendered, so changing the company's prefix later
+  /// applies to new records only and can never appear to renumber a document
+  /// a customer already has. `number` remains the sortable counter.
+  displayNumber  String?
 
   jobId      String?
   customerId String
@@ -1036,6 +1086,7 @@ model Estimate {
   @@index([organizationId, status])
   @@index([organizationId, customerId])
   @@index([organizationId, jobId])
+  @@unique([organizationId, displayNumber])
 }
 
 model EstimateOption {
@@ -1137,6 +1188,12 @@ model Invoice {
   id             String @id @default(uuid())
   organizationId String
   number         Int
+  /// The identifier as it was first shown, e.g. "INV-1008".
+  ///
+  /// Stored rather than rendered, so changing the company's prefix later
+  /// applies to new records only and can never appear to renumber a document
+  /// a customer already has. `number` remains the sortable counter.
+  displayNumber  String?
 
   jobId      String?
   estimateId String?
@@ -1181,6 +1238,7 @@ model Invoice {
   @@unique([organizationId, number])
   @@index([organizationId, status, dueAt])
   @@index([organizationId, customerId])
+  @@unique([organizationId, displayNumber])
 }
 
 model InvoiceItem {
@@ -1238,12 +1296,18 @@ model Payment {
   reference  String?
   memo       String?
 
-  /// Set only by the (future) payment provider integration.
+  /// Set by the payment provider integration. `providerPaymentId` is the
+  /// charge; `providerIntentId` is the intent it came from. Both are unique
+  /// per provider, so a webhook delivered twice cannot record two payments.
   providerName       String?
   providerPaymentId  String?
+  providerIntentId   String?
   providerCustomerId String?
+  providerAccountId  String?
   cardBrand          String?
   cardLast4          String?
+  /// Receipt email recorded at the time of payment, for the receipt we send.
+  receiptEmail       String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1253,6 +1317,7 @@ model Payment {
   customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
 
   @@unique([providerName, providerPaymentId])
+  @@unique([providerName, providerIntentId])
   @@index([organizationId, receivedAt])
   @@index([organizationId, invoiceId])
 }
@@ -1469,41 +1534,84 @@ enum CommunicationDirection {
 
 enum CommunicationStatus {
   QUEUED
+  /// Handed to the provider; no acknowledgement yet.
+  SENDING
+  /// The provider accepted it and gave us a message id.
   SENT
+  /// The provider told us it reached the mailbox.
   DELIVERED
   FAILED
+  /// A hard bounce. Retrying the same address will not help.
+  BOUNCED
   RECEIVED
 }
 
-/// History only for now. No provider is wired up; nothing here pretends a
-/// message was delivered unless a real provider reported it.
+/// What a message is for. Used to pick a template, to group the customer
+/// timeline, and to keep a send from being repeated.
+enum MessageType {
+  TEAM_INVITATION
+  PASSWORD_RESET
+  ESTIMATE_LINK
+  INVOICE_LINK
+  PAYMENT_RECEIPT
+  REVIEW_REQUEST
+  APPOINTMENT_CONFIRMATION
+  APPOINTMENT_REMINDER
+  GENERAL
+}
+
+/// Every message the product tries to send, and what actually happened to it.
+///
+/// A row is created BEFORE the provider is called and is only moved past
+/// SENDING by something the provider told us. Nothing here treats an attempted
+/// API call as a delivered message.
 model CommunicationLog {
   id             String  @id @default(uuid())
   organizationId String
   customerId     String?
+  /// The team member a message was addressed to, for invitations and resets.
+  userId         String?
 
-  channel   CommunicationChannel
-  direction CommunicationDirection @default(OUTBOUND)
-  status    CommunicationStatus    @default(QUEUED)
+  channel     CommunicationChannel
+  direction   CommunicationDirection @default(OUTBOUND)
+  status      CommunicationStatus    @default(QUEUED)
+  messageType MessageType            @default(GENERAL)
 
   templateKey       String?
   subject           String?
   body              String
   toAddress         String?
+  /// Which provider handled it: "resend", "smtp", "console".
+  providerName      String?
   providerMessageId String?
   errorMessage      String?
 
-  jobId      String?
-  estimateId String?
-  invoiceId  String?
+  /// Attempts made so far, so a retry is visible rather than implied.
+  attemptCount   Int       @default(0)
+  lastAttemptAt  DateTime?
+  deliveredAt    DateTime?
+  failedAt       DateTime?
+
+  /// Set by the caller so a retried send reuses its row and a duplicate send
+  /// is refused by the database rather than by a check that can race.
+  idempotencyKey String? @unique
+
+  jobId        String?
+  estimateId   String?
+  invoiceId    String?
+  invitationId String?
+  paymentId    String?
 
   createdAt DateTime  @default(now())
   sentAt    DateTime?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   customer     Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, customerId, createdAt])
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, messageType, createdAt])
 }
 
 /// Where a review request points. Google is the only destination offered in the
@@ -1583,6 +1691,9 @@ model ReviewRequest {
   scheduledFor DateTime?
   sentAt       DateTime?
   clickedAt    DateTime?
+  failedAt     DateTime?
+  errorMessage String?
+  attemptCount Int       @default(0)
 
   createdAt DateTime @default(now())
 
@@ -1591,6 +1702,9 @@ model ReviewRequest {
   job          Job?               @relation(fields: [jobId], references: [id], onDelete: SetNull)
   destination  ReviewDestination? @relation(fields: [destinationId], references: [id], onDelete: SetNull)
 
+  /// One request per job. A second completion, a retry, or a manual send all
+  /// find the existing row instead of asking the customer twice.
+  @@unique([jobId])
   @@index([organizationId, status])
 }
 
@@ -1664,6 +1778,16 @@ model Subscription {
   providerName           String?
   providerCustomerId     String?
   providerSubscriptionId String?
+  providerPriceId        String?
+  /// Card summary Stripe reports back. Never a PAN, never a token we could
+  /// charge with - four digits and a brand name, for recognition only.
+  cardBrand              String?
+  cardLast4              String?
+
+  /// When the paid subscription first became active, for MRR reporting.
+  startedAt   DateTime?
+  /// When Stripe first reported a failed payment. Cleared on recovery.
+  pastDueSince DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1672,6 +1796,7 @@ model Subscription {
   commissions  Commission[]
 
   @@index([status])
+  @@index([providerSubscriptionId])
 }
 
 model Affiliate {
@@ -1734,6 +1859,90 @@ model Commission {
 
   @@unique([subscriptionId, periodStart])
   @@index([affiliateId, status])
+}
+
+// ---------------------------------------------------------------------------
+// PASSWORD RESET, WEBHOOKS, CONNECTED PAYMENT ACCOUNTS
+// ---------------------------------------------------------------------------
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSED
+  /// Understood, but nothing in this product acts on it.
+  IGNORED
+  FAILED
+}
+
+/// Every webhook this product has accepted, with the provider's own event id
+/// under a unique constraint.
+///
+/// This is the idempotency boundary: a replayed delivery is recognised here,
+/// before any business logic runs, and it is also the audit trail for "why did
+/// this account change state at 3am".
+model WebhookEvent {
+  id       String @id @default(uuid())
+  provider String
+
+  /// The provider's event id, e.g. `evt_1P...`. Unique per provider.
+  eventId   String
+  eventType String
+  status    WebhookStatus @default(RECEIVED)
+
+  /// The connected account an event arrived for, when it is not the platform.
+  providerAccountId String?
+  /// Resolved where possible; null for events about an unknown account.
+  organizationId    String?
+
+  /// The event as received, for replaying a fix by hand if one is ever needed.
+  payload      Json
+  errorMessage String?
+
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, eventId])
+  @@index([provider, eventType, receivedAt])
+  @@index([organizationId, receivedAt])
+}
+
+/// The garage door company's own connected payment account.
+///
+/// Funds from a customer's invoice settle here, not with Garage Door HQ. See
+/// docs/PAYMENT-MODEL.md for why this is a separate account rather than a
+/// balance we hold on their behalf.
+model PaymentAccount {
+  id             String @id @default(uuid())
+  organizationId String @unique
+
+  provider          String  @default("stripe")
+  providerAccountId String  @unique
+  /// "standard" or "express"; Standard at launch.
+  accountType       String  @default("standard")
+
+  /// Reported by the provider, never assumed. The Pay Invoice button appears
+  /// only while `chargesEnabled` is true.
+  chargesEnabled   Boolean @default(false)
+  payoutsEnabled   Boolean @default(false)
+  detailsSubmitted Boolean @default(false)
+  /// What the provider says is still outstanding, shown to the owner verbatim.
+  requirementsNote String?
+
+  country         String  @default("US")
+  defaultCurrency String  @default("USD")
+  /// Platform fee in basis points. Zero at launch and deliberately so; see
+  /// docs/PAYMENT-MODEL.md.
+  applicationFeeBps Int   @default(0)
+
+  connectedAt  DateTime?
+  disconnectedAt DateTime?
+  lastSyncedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 // ---------------------------------------------------------------------------

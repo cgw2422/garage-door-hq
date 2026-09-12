@@ -20,9 +20,9 @@ export async function generateMetadata({
   const { id } = await params
   const estimate = await session.db.estimate.findUnique({
     where: { id },
-    select: { number: true },
+    select: { number: true, displayNumber: true },
   })
-  return { title: estimate ? formatEstimateNumber(estimate.number) : 'Estimate' }
+  return { title: estimate ? formatEstimateNumber(estimate) : 'Estimate' }
 }
 
 export default async function EstimatePage({ params }: { params: Promise<{ id: string }> }) {
@@ -64,7 +64,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
   return (
     <>
       <PageHeader
-        title={formatEstimateNumber(estimate.number)}
+        title={formatEstimateNumber(estimate)}
         subtitle={
           estimate.customer.companyName ??
           `${estimate.customer.firstName} ${estimate.customer.lastName}`

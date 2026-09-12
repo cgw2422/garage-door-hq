@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
+import type { SubscriptionStatus } from '@prisma/client'
 import { requirePermission } from '@/lib/session'
+import { roleCan } from '@/lib/rbac'
 import { PageBody, PageHeader } from '@/components/app/page-header'
 import { Card, Divider, ListRow, SectionHeading } from '@/components/ui/card'
 import {
@@ -13,8 +15,19 @@ import {
 export const metadata: Metadata = { title: 'Settings' }
 export const dynamic = 'force-dynamic'
 
+const SUBSCRIPTION_LABEL: Record<SubscriptionStatus, string> = {
+  TRIALING: 'Free trial',
+  ACTIVE: 'Active',
+  PAST_DUE: 'Payment failed',
+  CANCELLED: 'Cancelled',
+  COMPLIMENTARY: 'Complimentary',
+  EXPIRED: 'Ended',
+}
+
 export default async function SettingsPage() {
   const session = await requirePermission('settings:manage')
+  // Billing is the owner's alone, so an admin sees the status without a way in.
+  const canManageBilling = roleCan(session.role, 'subscription:manage')
 
   const [organization, googleDestination, subscription, sequences] = await Promise.all([
     session.db.organization.findUniqueOrThrow({ where: { id: session.organizationId } }),
@@ -98,6 +111,7 @@ export default async function SettingsPage() {
               sequences={sequences.map((sequence) => ({
                 entity: sequence.entity,
                 nextValue: sequence.nextValue,
+                prefix: sequence.prefix,
               }))}
             />
           </Card>
@@ -119,13 +133,24 @@ export default async function SettingsPage() {
             />
             <Divider className="ml-4" />
             <ListRow
+              href={canManageBilling ? '/settings/billing' : undefined}
               title="Subscription"
               subtitle={
                 subscription
-                  ? `${subscription.status.toLowerCase()} · $${(subscription.priceCents / 100).toFixed(2)}/month`
+                  ? `${SUBSCRIPTION_LABEL[subscription.status]} · $${(subscription.priceCents / 100).toFixed(2)}/month`
                   : 'No subscription on file'
               }
             />
+            {canManageBilling ? (
+              <>
+                <Divider className="ml-4" />
+                <ListRow
+                  href="/settings/payments"
+                  title="Customer Payments"
+                  subtitle="Take card payments on your invoices"
+                />
+              </>
+            ) : null}
           </Card>
         </div>
 

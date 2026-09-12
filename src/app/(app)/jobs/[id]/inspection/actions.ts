@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
-import { requirePermission } from '@/lib/session'
+import { requirePermission, requireActiveSubscription } from '@/lib/session'
 import { failure, type FormState } from '@/lib/form'
 import {
   completeInspection,
@@ -49,7 +49,7 @@ const remedySchema = z.object({
 export async function addRemedyAction(
   input: z.infer<typeof remedySchema>,
 ): Promise<{ ok: true; estimateId: string } | { ok: false; error: string }> {
-  const session = await requirePermission('estimate:write')
+  const session = await requireActiveSubscription('estimate:write')
   const parsed = remedySchema.parse(input)
 
   try {
@@ -75,7 +75,7 @@ const tieredSchema = z.object({
 export async function addTieredOptionsAction(
   input: z.infer<typeof tieredSchema>,
 ): Promise<{ ok: true; estimateId: string } | { ok: false; error: string }> {
-  const session = await requirePermission('estimate:write')
+  const session = await requireActiveSubscription('estimate:write')
   const parsed = tieredSchema.parse(input)
 
   try {

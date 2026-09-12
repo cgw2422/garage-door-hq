@@ -9,6 +9,17 @@ const config = [
   { ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts'] },
   ...compat.extends('next/core-web-vitals', 'next/typescript'),
   {
+    // The codebase already marks a deliberately unused parameter with a
+    // leading underscore — server actions must take (prevState, formData)
+    // whether or not they read either. Make the convention the rule.
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
+    },
+  },
+  {
     // These render to PDF via @react-pdf/renderer, not to the DOM. Its <Image>
     // takes no alt text and Next's <Image> rules do not apply.
     files: ['src/server/documents/pdf/**/*.tsx'],

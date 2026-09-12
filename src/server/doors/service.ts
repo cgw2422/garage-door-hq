@@ -8,7 +8,7 @@ import {
   type WindDirection,
 } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { nextNumber } from '@/lib/numbering'
+import { nextIdentifier } from '@/lib/numbering'
 import { recordAudit } from '@/lib/audit'
 import { formatSpringSize, formatWind } from '@/lib/measure'
 import type { AppSession } from '@/lib/session'
@@ -96,13 +96,18 @@ export async function createDoor(
   if (!property) throw new Error('Property not found')
 
   const door = await prisma.$transaction(async (tx) => {
-    const number = await nextNumber(tx, session.organizationId, 'DOOR')
+    const { number, displayNumber } = await nextIdentifier(
+      tx,
+      session.organizationId,
+      'DOOR',
+    )
 
     const created = await tx.door.create({
       data: {
         organizationId: session.organizationId,
         propertyId,
         number,
+        displayNumber,
         nickname: input.nickname?.trim() || null,
         positionLabel: input.positionLabel?.trim() || null,
         widthInches: input.widthInches ?? null,

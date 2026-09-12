@@ -179,7 +179,7 @@ export default async function MoneyPage({
                     invoice.customer.companyName ??
                     `${invoice.customer.firstName} ${invoice.customer.lastName}`
                   }
-                  subtitle={formatInvoiceNumber(invoice.number)}
+                  subtitle={formatInvoiceNumber(invoice)}
                   trailing={
                     <div className="flex flex-col items-end gap-1.5">
                       <span className="num text-[0.9375rem] font-bold text-ink">

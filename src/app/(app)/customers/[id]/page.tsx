@@ -187,7 +187,7 @@ export default async function CustomerProfilePage({
                           href={`/doors/${door.id}`}
                           leading={<DoorIcon className="h-5 w-5 text-ink-subtle" />}
                           title={
-                            door.nickname ?? door.positionLabel ?? formatDoorNumber(door.number)
+                            door.nickname ?? door.positionLabel ?? formatDoorNumber(door)
                           }
                           subtitle={[
                             formatDoorSize(door.widthInches, door.heightInches),
@@ -227,11 +227,11 @@ export default async function CustomerProfilePage({
                   {index > 0 ? <Divider className="ml-4" /> : null}
                   <ListRow
                     href={`/jobs/${job.id}`}
-                    title={job.jobType?.name ?? formatJobNumber(job.number)}
+                    title={job.jobType?.name ?? formatJobNumber(job)}
                     subtitle={
                       job.scheduledStart
                         ? formatDate(job.scheduledStart, session.timezone)
-                        : formatJobNumber(job.number)
+                        : formatJobNumber(job)
                     }
                     trailing={<JobStatusChip status={job.status} />}
                   />
@@ -250,7 +250,7 @@ export default async function CustomerProfilePage({
                   {index > 0 ? <Divider className="ml-4" /> : null}
                   <ListRow
                     href={`/invoices/${invoice.id}`}
-                    title={formatInvoiceNumber(invoice.number)}
+                    title={formatInvoiceNumber(invoice)}
                     subtitle={
                       invoice.issuedAt ? formatDate(invoice.issuedAt, session.timezone) : 'Draft'
                     }

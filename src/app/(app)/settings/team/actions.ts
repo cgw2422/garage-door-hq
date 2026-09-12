@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
-import { requirePermission } from '@/lib/session'
+import { requirePermission, requireActiveSubscription } from '@/lib/session'
 import { failure, parseForm, type FormState } from '@/lib/form'
 import { clientAddress, enforceRateLimit } from '@/lib/rate-limit'
 import {
@@ -31,7 +31,7 @@ export async function inviteMemberAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const session = await requirePermission('team:manage')
+  const session = await requireActiveSubscription('team:manage')
   const parsed = parseForm(inviteSchema, formData)
   if (!parsed.ok) return parsed.state
 
@@ -49,7 +49,7 @@ export async function resendInvitationAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const session = await requirePermission('team:manage')
+  const session = await requireActiveSubscription('team:manage')
   const invitationId = String(formData.get('invitationId') ?? '')
   const email = String(formData.get('email') ?? '')
 

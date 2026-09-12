@@ -1,6 +1,6 @@
 import { Prisma, type EstimateTier, type LineItemKind } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { nextNumber } from '@/lib/numbering'
+import { nextIdentifier } from '@/lib/numbering'
 import { recordAudit } from '@/lib/audit'
 import type { AppSession } from '@/lib/session'
 import { computeTotals } from './documents'
@@ -64,11 +64,16 @@ export async function ensureDraftEstimate(session: AppSession, jobId: string) {
   })
 
   return prisma.$transaction(async (tx) => {
-    const number = await nextNumber(tx, session.organizationId, 'ESTIMATE')
+    const { number, displayNumber } = await nextIdentifier(
+      tx,
+      session.organizationId,
+      'ESTIMATE',
+    )
     return tx.estimate.create({
       data: {
         organizationId: session.organizationId,
         number,
+        displayNumber,
         jobId,
         customerId: job.customerId,
         title: job.jobType?.name ?? 'Recommended Work',

@@ -7,9 +7,14 @@ import { LoginForm } from './login-form'
 
 export const metadata: Metadata = { title: 'Sign in' }
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ reset?: string }>
+}) {
   const user = await getAuthenticatedUser()
   if (user) redirect(landingFor(user))
+  const { reset } = await searchParams
 
   return (
     <div>
@@ -19,7 +24,7 @@ export default async function LoginPage() {
       <div className="rounded-[--radius-card] bg-surface p-5 shadow-[--shadow-raised]">
         <h1 className="text-xl font-bold text-ink">Sign in</h1>
         <p className="mt-1 text-sm text-ink-muted">Let&apos;s get to work.</p>
-        <LoginForm />
+        <LoginForm justReset={reset === '1'} />
       </div>
       <p className="mt-6 text-center text-sm text-navy-300">
         New here?{' '}
