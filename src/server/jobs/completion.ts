@@ -318,8 +318,13 @@ export async function completeJob(
       await recomputeJobCostingTx(tx, session.organizationId, job.id)
 
       // --- Review request ---------------------------------------------------
+      //
+      // One per job, enforced by a unique index. `createMany` with
+      // skipDuplicates rather than `create`, because a duplicate here must not
+      // roll back the job completion that surrounds it.
       if (reviewDestination) {
-        await tx.reviewRequest.create({
+        await tx.reviewRequest.createMany({
+          skipDuplicates: true,
           data: {
             organizationId: session.organizationId,
             customerId: locked.customerId,
@@ -328,6 +333,8 @@ export async function completeJob(
             // Snapshot: an edited setting cannot rewrite what was sent.
             reviewUrl: reviewDestination.url,
             status: 'QUEUED',
+            // A couple of hours after the technician drives away, so the door
+            // has actually been used before anybody is asked about it.
             scheduledFor: new Date(now.getTime() + 2 * 60 * 60 * 1000),
           },
         })

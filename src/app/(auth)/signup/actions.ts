@@ -5,7 +5,9 @@ import { z } from 'zod'
 import { signIn } from '@/lib/auth'
 import { PASSWORD_MIN_LENGTH } from '@/lib/password-policy'
 import { failure, parseForm, type FormState } from '@/lib/form'
+import { cookies } from 'next/headers'
 import { clientAddress, enforceRateLimit } from '@/lib/rate-limit'
+import { REFERRAL_COOKIE, normalizeReferralCode } from '@/lib/attribution'
 import { registerOwner } from '@/server/organizations/onboarding'
 
 const schema = z.object({
@@ -31,6 +33,11 @@ export async function signUp(_prev: FormState, formData: FormData): Promise<Form
     return failure(error, formData)
   }
 
+  // Attribution is recorded when the company is created, one step later. The
+  // code is carried forward here so it survives even if the cookie is blocked.
+  const cookieCode = normalizeReferralCode((await cookies()).get(REFERRAL_COOKIE)?.value)
+  const referralCode = cookieCode ?? normalizeReferralCode(parsed.data.referralCode)
+
   try {
     await registerOwner(parsed.data)
   } catch (error) {
@@ -44,8 +51,6 @@ export async function signUp(_prev: FormState, formData: FormData): Promise<Form
     redirect: false,
   })
 
-  const suffix = parsed.data.referralCode
-    ? `?ref=${encodeURIComponent(parsed.data.referralCode)}`
-    : ''
+  const suffix = referralCode ? `?ref=${encodeURIComponent(referralCode)}` : ''
   redirect(`/onboarding/company${suffix}`)
 }

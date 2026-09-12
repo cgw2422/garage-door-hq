@@ -3,8 +3,9 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { userMessage } from '@/lib/errors'
 import { requirePermission, requireActiveSubscription } from '@/lib/session'
-import { failure, type FormState } from '@/lib/form'
+import { failure, type FormState, guarded } from '@/lib/form'
 import {
   completeInspection,
   setItemNote,
@@ -32,11 +33,27 @@ const noteSchema = z.object({
   jobId: z.string().uuid(),
 })
 
-export async function setNoteAction(input: z.infer<typeof noteSchema>) {
+/**
+ * Save one finding's note.
+ *
+ * Returns an outcome rather than throwing: the field keeps a local copy of
+ * what was typed and only discards it once this reports success, so a failure
+ * here must be something the caller can see rather than an exception that
+ * unmounts the screen.
+ */
+export async function setNoteAction(
+  input: z.infer<typeof noteSchema>,
+): Promise<{ ok: boolean; error?: string }> {
   const session = await requirePermission('job:write')
-  const parsed = noteSchema.parse(input)
-  await setItemNote(session, { itemId: parsed.itemId, note: parsed.note })
-  revalidatePath(`/jobs/${parsed.jobId}/inspection`)
+
+  try {
+    const parsed = noteSchema.parse(input)
+    await setItemNote(session, { itemId: parsed.itemId, note: parsed.note })
+    revalidatePath(`/jobs/${parsed.jobId}/inspection`)
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: userMessage(error, 'inspection.note') }
+  }
 }
 
 const remedySchema = z.object({
@@ -49,7 +66,11 @@ const remedySchema = z.object({
 export async function addRemedyAction(
   input: z.infer<typeof remedySchema>,
 ): Promise<{ ok: true; estimateId: string } | { ok: false; error: string }> {
-  const session = await requireActiveSubscription('estimate:write')
+  const gate = await guarded(() => requireActiveSubscription('estimate:write'))
+  // This action answers with its own shape, so the gate's message is carried
+  // across rather than returned as a form state.
+  if (!gate.ok) return { ok: false, error: gate.state.error ?? 'That is not available.' }
+  const session = gate.value
   const parsed = remedySchema.parse(input)
 
   try {
@@ -75,7 +96,11 @@ const tieredSchema = z.object({
 export async function addTieredOptionsAction(
   input: z.infer<typeof tieredSchema>,
 ): Promise<{ ok: true; estimateId: string } | { ok: false; error: string }> {
-  const session = await requireActiveSubscription('estimate:write')
+  const gate = await guarded(() => requireActiveSubscription('estimate:write'))
+  // This action answers with its own shape, so the gate's message is carried
+  // across rather than returned as a form state.
+  if (!gate.ok) return { ok: false, error: gate.state.error ?? 'That is not available.' }
+  const session = gate.value
   const parsed = tieredSchema.parse(input)
 
   try {

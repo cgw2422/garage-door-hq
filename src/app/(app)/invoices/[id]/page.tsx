@@ -10,7 +10,8 @@ import { PageBody, PageHeader } from '@/components/app/page-header'
 import { Card, CardHeader, Divider } from '@/components/ui/card'
 import { InvoiceStatusChip } from '@/components/ui/status'
 import { PaymentPanel } from './payment-panel'
-import { ShareLink } from '@/components/app/share-link'
+import { SendDocument } from '@/components/app/send-document'
+import { emailIsConfigured } from '@/server/email'
 import { activeLinkFor } from '@/server/portal/service'
 import { DocumentIcon } from '@/components/ui/icons'
 
@@ -42,6 +43,7 @@ export default async function InvoicePage({
   const { collect } = await searchParams
 
   const portalLink = await activeLinkFor(session, { invoiceId: id })
+  const emailConfigured = emailIsConfigured()
   const invoice = await session.db.invoice.findUnique({
     where: { id },
     include: {
@@ -182,23 +184,23 @@ export default async function InvoicePage({
           </Card>
         ) : null}
 
-        <ShareLink
-          timezone={session.timezone}
-          target="INVOICE"
-          documentId={invoice.id}
-          existingLink={
-            portalLink
-              ? {
-                  id: portalLink.id,
-                  expiresAt: portalLink.expiresAt.toISOString(),
-                  viewCount: portalLink.viewCount,
-                  lastViewedAt: portalLink.lastViewedAt?.toISOString() ?? null,
-                }
-              : null
-          }
-          revalidate={`/invoices/${invoice.id}`}
-          label="Send to the customer"
-        />
+        <SendDocument
+            target="INVOICE"
+            documentId={invoice.id}
+            customerEmail={invoice.customer.email}
+            customerName={customerName}
+            emailConfigured={emailConfigured}
+            existingLink={
+              portalLink
+                ? {
+                    expiresAt: portalLink.expiresAt.toISOString(),
+                    viewCount: portalLink.viewCount,
+                    lastViewedAt: portalLink.lastViewedAt?.toISOString() ?? null,
+                  }
+                : null
+            }
+            label="Send to the customer"
+          />
 
         <a
           href={`/api/documents/invoices/${invoice.id}/pdf`}

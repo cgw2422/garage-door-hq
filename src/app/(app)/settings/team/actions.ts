@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { requirePermission, requireActiveSubscription } from '@/lib/session'
-import { failure, parseForm, type FormState } from '@/lib/form'
+import { failure, parseForm, type FormState, guarded } from '@/lib/form'
 import { clientAddress, enforceRateLimit } from '@/lib/rate-limit'
 import {
   acceptInvitation,
@@ -13,6 +13,7 @@ import {
   updateMember,
 } from '@/server/team/service'
 import { signIn } from '@/lib/auth'
+import { sendInvitationEmail } from '@/server/communications/dispatch'
 
 const ROLES = ['OWNER', 'ADMIN', 'OFFICE', 'TECHNICIAN'] as const
 
@@ -23,25 +24,45 @@ const inviteSchema = z.object({
 })
 
 /**
- * Email delivery is not configured, so the invite link is returned to the
- * admin who created it. That is a deliberate, visible state — not a silent
- * failure and not a fake "sent" message.
+ * Invite someone, and email them.
+ *
+ * The invitation exists whether or not the email goes out — that is the point
+ * of creating it first. A delivery failure is reported next to the link, which
+ * is always shown as a fallback, so an admin can send it by hand and nobody is
+ * told a message arrived that did not.
  */
 export async function inviteMemberAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const session = await requireActiveSubscription('team:manage')
+  const gate = await guarded(() => requireActiveSubscription('team:manage'), formData)
+  if (!gate.ok) return gate.state
+  const session = gate.value
   const parsed = parseForm(inviteSchema, formData)
   if (!parsed.ok) return parsed.state
 
+  let invitation: { invitationId: string; acceptUrl: string }
   try {
     await enforceRateLimit('invite', `org:${session.organizationId}`)
-    const result = await inviteMember(session, parsed.data)
-    revalidatePath('/settings/team')
-    return { values: { inviteUrl: result.acceptUrl, invitedEmail: parsed.data.email } }
+    invitation = await inviteMember(session, parsed.data)
   } catch (error) {
     return failure(error, formData)
+  }
+
+  const delivery = await sendInvitationEmail({
+    organizationId: session.organizationId,
+    invitationId: invitation.invitationId,
+    inviteUrl: invitation.acceptUrl,
+  })
+
+  revalidatePath('/settings/team')
+  return {
+    values: {
+      inviteUrl: invitation.acceptUrl,
+      invitedEmail: parsed.data.email,
+      delivery: delivery.ok ? 'sent' : 'failed',
+      deliveryError: delivery.error ?? '',
+    },
   }
 }
 
@@ -49,15 +70,33 @@ export async function resendInvitationAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const session = await requireActiveSubscription('team:manage')
+  const gate = await guarded(() => requireActiveSubscription('team:manage'), formData)
+  if (!gate.ok) return gate.state
+  const session = gate.value
   const invitationId = String(formData.get('invitationId') ?? '')
   const email = String(formData.get('email') ?? '')
 
   try {
     await enforceRateLimit('invite', `org:${session.organizationId}`)
     const result = await resendInvitation(session, invitationId)
+
+    // Re-sending mints a new token and revokes the old one, so this is a new
+    // message rather than a retry of the previous one.
+    const delivery = await sendInvitationEmail({
+      organizationId: session.organizationId,
+      invitationId: result.invitationId,
+      inviteUrl: result.acceptUrl,
+    })
+
     revalidatePath('/settings/team')
-    return { values: { inviteUrl: result.acceptUrl, invitedEmail: email } }
+    return {
+      values: {
+        inviteUrl: result.acceptUrl,
+        invitedEmail: email,
+        delivery: delivery.ok ? 'sent' : 'failed',
+        deliveryError: delivery.error ?? '',
+      },
+    }
   } catch (error) {
     return failure(error, formData)
   }

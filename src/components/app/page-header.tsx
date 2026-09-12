@@ -70,8 +70,21 @@ export function PageBody({
  */
 export function StickyActions({ children }: { children: ReactNode }) {
   return (
-    <div className="fixed inset-x-0 bottom-[4.25rem] z-30 border-t border-hairline bg-surface/95 px-3 py-3 backdrop-blur md:bottom-0">
-      <div className="safe-bottom mx-auto flex max-w-3xl gap-2.5">{children}</div>
-    </div>
+    <>
+      {/*
+        Reserves the space the fixed bar covers.
+
+        Without this, whatever happens to be last on a page ends up trapped
+        under the bar with no way to scroll it clear — which is how a working
+        button becomes untappable on a phone. Keeping the spacer here rather
+        than asking every page for a bottom padding class means a screen
+        cannot forget.
+      */}
+      <div aria-hidden="true" className="safe-bottom h-[9.5rem] md:h-24" />
+
+      <div className="fixed inset-x-0 bottom-[4.25rem] z-30 border-t border-hairline bg-surface/95 px-3 py-3 backdrop-blur md:bottom-0">
+        <div className="safe-bottom mx-auto flex max-w-3xl gap-2.5">{children}</div>
+      </div>
+    </>
   )
 }

@@ -9,6 +9,7 @@ import {
   BriefcaseIcon,
   CalendarIcon,
   ChartIcon,
+  SearchIcon,
   SettingsIcon,
   SpringIcon,
   UsersIcon,
@@ -20,6 +21,7 @@ import {
  * mobile product adapted upward, not a separate admin console.
  */
 const LINKS = [
+  { href: '/search', label: 'Search', icon: SearchIcon },
   { href: '/today', label: 'Today', icon: CalendarIcon },
   { href: '/jobs', label: 'Jobs', icon: BriefcaseIcon },
   { href: '/customers', label: 'Customers', icon: UsersIcon },

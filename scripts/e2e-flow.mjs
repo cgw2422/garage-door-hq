@@ -1,23 +1,38 @@
 /**
- * The whole product, driven through the real UI in a real browser against a
- * real database, starting from an empty account.
+ * The whole product — a paid customer's whole life — driven through the real
+ * UI in a real browser against a real database.
  *
- *   sign up → onboarding → edit the starter pricing → invite a technician →
- *   receive stock → customer → property → Door Passport → schedule the job →
- *   start → inspect → recommendations → Good/Better/Best → the customer opens
- *   a private link on their own phone, chooses and signs → complete →
- *   inventory deducts → passport updates → invoice → payment → PDF →
- *   financial dashboard
+ *   partner link → sign up → attribution → trial → onboarding → pricing →
+ *   invite a technician → receive stock → customer → Door Passport →
+ *   schedule → inspect → Good/Better/Best → email the estimate → the customer
+ *   opens the emailed link on their own phone, chooses and signs → complete →
+ *   inventory deducts → passport updates → invoice → email it → payment →
+ *   PDFs → review request → trial expires → the account goes read-only →
+ *   a signed Stripe webhook activates it → full access returns →
+ *   platform admin shows the subscription and the attribution
  *
  * Usage:  node scripts/e2e-flow.mjs [baseUrl]
  *
  * Every run creates its own company, so it is repeatable without re-seeding
  * and never disturbs the demo data.
+ *
+ * Two legs are simulated rather than called against Stripe's servers, and the
+ * simulation is the real code path in both cases:
+ *
+ * - Subscription activation is a genuine `customer.subscription.updated`
+ *   event, signed with the deployment's own webhook secret and POSTed to the
+ *   real endpoint. Signature verification, the replay guard and the state sync
+ *   all run for real; only Stripe's outbound call is absent.
+ * - Card payment on an invoice needs a connected Stripe account and a real
+ *   test card, so it is skipped here and covered by tests/customer-payments.ts
+ *   (15 tests) and tests/webhooks.ts (17 tests) instead. The script says so
+ *   rather than pretending.
  */
 import { chromium } from 'playwright'
 import { PrismaClient } from '@prisma/client'
+import { createHmac } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 const BASE = process.argv[2] ?? 'http://127.0.0.1:3000'
@@ -28,6 +43,11 @@ const OWNER_EMAIL = `owner.${stamp}@e2e.test`
 const TECH_EMAIL = `tech.${stamp}@e2e.test`
 const PASSWORD = 'GarageDoorHQ2026!'
 const COMPANY = `Summit Overhead Door ${stamp}`
+const REFERRAL_CODE = `E2E${stamp}`
+const CUSTOMER_EMAIL = `rachel.${stamp}@e2e.test`
+// Platform staff come from the demo seed; `npm run db:seed` creates them.
+const ADMIN_EMAIL = process.env.PLATFORM_ADMIN_EMAIL ?? 'admin@garagedoorhq.test'
+const ADMIN_PASSWORD = process.env.DEMO_PASSWORD ?? 'GarageDoorHQ2026!'
 
 let stepNumber = 0
 
@@ -82,6 +102,46 @@ async function sign(page) {
   await page.waitForTimeout(150)
 }
 
+/**
+ * Click something on a screen that has a sticky action bar.
+ *
+ * Playwright scrolls an element to the viewport edge, which on a phone layout
+ * puts it under the fixed bar and then refuses to click. A person scrolls a
+ * little further, so this centres it — and then *checks* that centring
+ * actually cleared the overlays before dispatching, so a genuinely
+ * unreachable button still fails the run rather than being clicked around.
+ */
+async function clickCentered(locator, label = 'button') {
+  await locator.scrollIntoViewIfNeeded()
+  await locator.evaluate((element) => element.scrollIntoView({ block: 'center' }))
+  await page0Wait(120)
+
+  const reachable = await locator.evaluate((element) => {
+    const box = element.getBoundingClientRect()
+    const x = box.left + box.width / 2
+    const y = box.top + box.height / 2
+    if (y < 0 || y > window.innerHeight) return { ok: false, why: 'off screen' }
+    const atPoint = document.elementFromPoint(x, y)
+    if (!atPoint) return { ok: false, why: 'nothing at its centre' }
+    // Covered by something that is not the button or its own contents.
+    if (!element.contains(atPoint) && atPoint !== element) {
+      return { ok: false, why: `covered by <${atPoint.tagName.toLowerCase()}>` }
+    }
+    return { ok: true }
+  })
+
+  if (!reachable.ok) fail(`"${label}" is not tappable: ${reachable.why}`)
+
+  // Dispatch on the element itself: the reachability check above is the real
+  // assertion, and Playwright's own re-scroll would undo the centring.
+  await locator.evaluate((element) => element.click())
+}
+
+/** A small pause, used only by clickCentered. */
+function page0Wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function dateString(daysFromNow) {
   const date = new Date(Date.now() + daysFromNow * 86_400_000)
   return date.toISOString().slice(0, 10)
@@ -129,32 +189,112 @@ const PHONE = {
  * this the second run fails on a refusal that is the product working.
  */
 async function clearOwnRateLimitWindows() {
-  const prisma = new PrismaClient()
-  try {
-    await prisma.rateLimit.deleteMany({
+  await withPrisma((prisma) =>
+    prisma.rateLimit.deleteMany({
       where: {
         OR: ['signup:', 'login:', 'portalToken:', 'invite:'].map((scope) => ({
           key: { startsWith: scope },
         })),
       },
-    })
+    }),
+  )
+}
+
+/** One short-lived client per query; the script is not a long-running app. */
+async function withPrisma(fn) {
+  const prisma = new PrismaClient()
+  try {
+    return await fn(prisma)
   } finally {
     await prisma.$disconnect()
   }
 }
 
+/** The partner whose link this run arrives through. */
+async function ensureAffiliate() {
+  return withPrisma((prisma) =>
+    prisma.affiliate.upsert({
+      where: { code: REFERRAL_CODE },
+      update: {},
+      create: {
+        name: `E2E Partner ${stamp}`,
+        email: `partner-${stamp}@e2e.test`,
+        code: REFERRAL_CODE,
+        commissionPercent: 20,
+        notes: 'Created by the end-to-end walkthrough.',
+      },
+    }),
+  )
+}
+
+/**
+ * The link that was put in an email.
+ *
+ * Email delivery is not configured against a real provider here, so the
+ * message is composed, logged and its body read back — which is exactly what
+ * the customer would have received. The composition path is the real one.
+ */
+async function linkFromLastEmail(messageType) {
+  const log = await withPrisma((prisma) =>
+    prisma.communicationLog.findFirst({
+      where: { messageType, toAddress: { endsWith: '@e2e.test' } },
+      orderBy: { createdAt: 'desc' },
+    }),
+  )
+  if (!log) fail(`No ${messageType} email was composed`)
+  const match = /(https?:\/\/[^\s]+\/p\/[ei]\/[A-Za-z0-9_-]{20,})/.exec(log.body)
+  if (!match) fail(`No customer link in the ${messageType} email`)
+  return { url: match[1], log }
+}
+
+/**
+ * Read one value out of `.env`.
+ *
+ * Node does not load it, and the deployment's own webhook secret is what makes
+ * the activation leg a real test rather than a mock.
+ */
+function fromDotEnv(key) {
+  if (process.env[key]) return process.env[key]
+  if (!existsSync('.env')) return null
+  const match = new RegExp(`^${key}\\s*=\\s*"?([^"\\n]*)"?`, 'm').exec(
+    readFileSync('.env', 'utf8'),
+  )
+  return match?.[1]?.trim() || null
+}
+
+/** Sign a webhook body the way Stripe signs one. */
+function stripeSignature(body, secret) {
+  const timestamp = Math.floor(Date.now() / 1000)
+  const signature = createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex')
+  return `t=${timestamp},v1=${signature}`
+}
+
 const run = async () => {
   await mkdir(SHOTS, { recursive: true })
   await clearOwnRateLimitWindows()
+  await ensureAffiliate()
 
   const browser = await chromium.launch({ executablePath: findChromium() })
   const context = await browser.newContext(PHONE)
   const page = await context.newPage()
   page.on('pageerror', (error) => console.warn(`     [browser error] ${error.message}`))
 
+  /** Filled in once the company exists; used by the later billing legs. */
+  let organizationId = ''
+
   try {
-    // --- 1. Sign up --------------------------------------------------------
-    await page.goto(`${BASE}/signup`, { waitUntil: 'domcontentloaded' })
+    // --- 1. Arrive through a partner's link ---------------------------------
+    //
+    // The code is captured on first touch and has to survive reading the site
+    // and then signing up, which a query parameter alone does not.
+    await page.goto(`${BASE}/?ref=${REFERRAL_CODE}`, { waitUntil: 'domcontentloaded' })
+    log(`Landed on the marketing page through ?ref=${REFERRAL_CODE}`)
+
+    // Navigate the way a person would, losing the parameter on the way.
+    await page.click('a[href="/signup"]')
+    await page.waitForURL('**/signup', { timeout: 20_000 })
+
+    // --- 2. Sign up --------------------------------------------------------
     await page.fill('input[name="firstName"]', 'Dana')
     await page.fill('input[name="lastName"]', 'Reyes')
     await page.fill('input[name="email"]', OWNER_EMAIL)
@@ -184,6 +324,29 @@ const run = async () => {
 
     await page.click('button:has-text("Go to Today")')
     await page.waitForURL('**/today', { timeout: 30_000 })
+
+    // --- 3. Attribution survived the journey --------------------------------
+    const referral = await withPrisma((prisma) =>
+      prisma.referral.findFirst({
+        where: { organization: { name: COMPANY } },
+        include: { affiliate: true, organization: { select: { id: true } } },
+      }),
+    )
+    if (!referral) fail('The partner link did not attribute this signup')
+    if (referral.code !== REFERRAL_CODE) {
+      fail(`Attributed to ${referral.code} rather than ${REFERRAL_CODE}`)
+    }
+    organizationId = referral.organization.id
+    log(`Attributed to the partner (${referral.affiliate.name}, ${referral.affiliate.commissionPercent}%)`)
+
+    // --- 4. The trial is running --------------------------------------------
+    await page.goto(`${BASE}/settings/billing`, { waitUntil: 'domcontentloaded' })
+    const billingText = await bodyText(page)
+    expectText(billingText, 'free trial', 'The account is not on a trial')
+    expectText(billingText, '$39.99', 'The billing page does not show the price')
+    expectText(billingText, 'no per-user fee', 'The billing page does not state the promise')
+    log('On a free trial, $39.99/month, everything included')
+    await shot(page, '02-billing-trial')
 
     // --- 3. Starter prices are marked as examples --------------------------
     await page.goto(`${BASE}/settings/price-book`, { waitUntil: 'domcontentloaded' })
@@ -278,6 +441,8 @@ const run = async () => {
     await page.fill('input[name="firstName"]', 'Rachel')
     await page.fill('input[name="lastName"]', lastName)
     await page.fill('input[name="phone"]', '(555) 640-2277')
+    const emailField = page.locator('input[name="email"]')
+    if (await emailField.count()) await emailField.fill(CUSTOMER_EMAIL)
     await page.fill('input[name="property.line1"]', '410 Sycamore Ave')
     await page.fill('input[name="property.city"]', 'Charlotte')
     await page.fill('input[name="property.state"]', 'NC')
@@ -373,21 +538,47 @@ const run = async () => {
     await page.click('button:has-text("Present to customer")')
     await page.waitForURL('**/sign', { timeout: 20_000 })
 
-    // --- 13. Issue a private link for the customer ---------------------------
+    // --- Email the estimate to the customer ---------------------------------
     await page.goto(estimateUrl, { waitUntil: 'domcontentloaded' })
-    await page.click('button:has-text("Create customer link")')
-    await page.waitForTimeout(2000)
-    const linkText = await page.locator('text=/https?:\\/\\/[^ ]+\\/p\\/e\\//').first().innerText()
-    const portalUrl = linkText.trim()
+
+    // The panel shows the stored address with a Change button; the field only
+    // appears when there is no address on file.
+    const shownAddress = await bodyText(page)
+    expectText(shownAddress, CUSTOMER_EMAIL, 'The send panel does not show the customer address')
+
+    await clickCentered(page.locator('button:has-text("Send estimate")'), 'Send estimate')
+    await page.waitForTimeout(2500)
+
+    const sendText = await bodyText(page)
+    if (contains(sendText, 'estimate sent')) {
+      log(`Emailed the estimate to ${CUSTOMER_EMAIL}`)
+    } else if (contains(sendText, 'did not go out')) {
+      log('Estimate email failed — the link is still offered to send by hand')
+    } else {
+      fail('The send panel reported neither a send nor a failure')
+    }
+    await shot(page, '12-send-estimate')
+
+    // The message the customer would have received, read back from the log.
+    const estimateEmail = await linkFromLastEmail('ESTIMATE_LINK')
+    const portalUrl = estimateEmail.url
+
     if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/.test(portalUrl)) {
       fail(`The customer link exposes a database id: ${portalUrl}`)
     }
-    const token = portalUrl.split('/').pop()
-    if (!token || token.length < 20) fail('The customer link token is too short to be opaque')
-    log('Issued an opaque single-document customer link')
-    await shot(page, '12-share-link')
+    if (estimateEmail.log.status === 'DELIVERED') {
+      fail('A message was marked delivered without a provider delivery event')
+    }
+    if (!['SENT', 'FAILED'].includes(estimateEmail.log.status)) {
+      fail(`Unexpected message status: ${estimateEmail.log.status}`)
+    }
+    // The company's name, not ours, is what the customer sees.
+    if (!estimateEmail.log.subject?.includes(COMPANY)) {
+      fail(`The estimate email is not branded as ${COMPANY}`)
+    }
+    log(`Estimate email composed and logged as ${estimateEmail.log.status}, branded as the company`)
 
-    // --- 14. The customer opens it on their own phone, with no account -------
+    // --- The customer opens the emailed link, with no account ---------------
     const customerContext = await browser.newContext(PHONE)
     const customerPage = await customerContext.newPage()
     try {
@@ -485,6 +676,91 @@ const run = async () => {
     log(`Recorded the payment — invoice settled (${balance})`)
     await shot(page, '20-invoice-paid')
 
+    // --- Email the invoice ----------------------------------------------------
+    await page.goto(invoiceUrl, { waitUntil: 'domcontentloaded' })
+    const invoiceSend = page.locator('button:has-text("Send invoice")')
+    if (await invoiceSend.count()) {
+      await clickCentered(invoiceSend, 'Send invoice')
+      await page.waitForTimeout(2500)
+      const invoiceEmail = await linkFromLastEmail('INVOICE_LINK')
+      if (!invoiceEmail.log.subject?.includes(COMPANY)) {
+        fail('The invoice email is not branded as the company')
+      }
+      log(`Invoice email composed and logged as ${invoiceEmail.log.status}`)
+    } else {
+      log('Invoice is settled, so there is nothing to send')
+    }
+
+    // --- Review request -------------------------------------------------------
+    await page.goto(`${BASE}/settings`, { waitUntil: 'domcontentloaded' })
+    await page.fill('input[name="url"]', 'https://g.page/r/e2e-example/review')
+    await page.click('button:has-text("Save review")')
+    await page.waitForTimeout(1500)
+
+    await page.goto(jobUrl, { waitUntil: 'domcontentloaded' })
+    const reviewButton = page.locator('button:has-text("Send review request")')
+    if ((await reviewButton.count()) === 0) fail('No way to send a review request on a done job')
+    await clickCentered(reviewButton, 'Send review request')
+    await page.waitForTimeout(2500)
+
+    // The panel replaces itself with the sent state, so either wording is a
+    // success. The database is the assertion that matters.
+    const reviewText = await bodyText(page)
+    if (
+      !contains(reviewText, 'review request sent') &&
+      !contains(reviewText, 'sent to this customer')
+    ) {
+      fail('The review request did not send')
+    }
+
+    const reviewRow = await withPrisma((prisma) =>
+      prisma.reviewRequest.findFirst({
+        where: { organizationId },
+        orderBy: { createdAt: 'desc' },
+      }),
+    )
+    if (reviewRow?.status !== 'SENT') fail('The review request was not recorded as sent')
+    log('Review request sent, using the company’s own Google link')
+
+    // Asking twice is the failure mode; the button must now refuse.
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    const afterReview = await bodyText(page)
+    if (contains(afterReview, 'send review request')) {
+      fail('The review request can be sent a second time for the same job')
+    }
+    log('A second review request for the same job is refused')
+
+    // --- Communication timeline ------------------------------------------------
+    const customer = await withPrisma((prisma) =>
+      prisma.customer.findFirst({ where: { organizationId }, orderBy: { createdAt: 'desc' } }),
+    )
+    await page.goto(`${BASE}/customers/${customer.id}`, { waitUntil: 'domcontentloaded' })
+    const timelineText = await bodyText(page)
+    for (const entry of ['created', 'signed', 'paid']) {
+      expectText(timelineText, entry, `The customer timeline is missing "${entry}"`)
+    }
+    log('Customer timeline shows created, sent, signed and paid as separate events')
+    await shot(page, '22-timeline')
+
+    // --- Global search ---------------------------------------------------------
+    await page.goto(`${BASE}/search?q=${encodeURIComponent('555-640-2277')}`, {
+      waitUntil: 'domcontentloaded',
+    })
+    await page.waitForTimeout(800)
+    const searchText = await bodyText(page)
+    expectText(searchText, lastName.toLowerCase(), 'Search by phone number found nothing')
+    log('Search found the customer by phone number')
+
+    await page.goto(`${BASE}/search?q=${encodeURIComponent('.225 2 27')}`, {
+      waitUntil: 'domcontentloaded',
+    })
+    await page.waitForTimeout(800)
+    const springSearch = await bodyText(page)
+    expectText(springSearch, 'spring measurements', 'Search did not read that as measurements')
+    expectText(springSearch, 'torsion spring', 'Search by measurements found no springs')
+    log('Search read ".225 2 27" as spring measurements and found matching stock')
+    await shot(page, '23-search')
+
     // --- 21. PDFs -------------------------------------------------------------
     /**
      * Fetch inside the page so the browser's own session cookie authorizes the
@@ -548,6 +824,201 @@ const run = async () => {
     if (centsOf(collected) <= 0) fail('The financial dashboard shows nothing collected')
     log(`Financial dashboard reflects the completed job (${collected})`)
     await shot(page, '21-money')
+
+    // --- The trial runs out -----------------------------------------------------
+    //
+    // Moving the clock is the one thing a browser cannot do, so the trial end
+    // date is moved instead. Everything after this is the real enforcement.
+    await withPrisma((prisma) =>
+      prisma.subscription.update({
+        where: { organizationId },
+        data: { trialEndsAt: new Date(Date.now() - 86_400_000) },
+      }),
+    )
+
+    await page.goto(`${BASE}/today`, { waitUntil: 'domcontentloaded' })
+    const expiredText = await bodyText(page)
+    expectText(expiredText, 'your trial has ended', 'No notice that the trial ended')
+    expectText(expiredText, 'your data is safe', 'The notice does not reassure them about data')
+    expectText(expiredText, 'activate', 'No way to activate from the notice')
+    log('Trial expired — the account is told its data is safe, with a way to activate')
+    await shot(page, '24-trial-ended')
+
+    // --- Read-only means read-only, not gone -------------------------------------
+    await page.goto(`${BASE}/customers`, { waitUntil: 'domcontentloaded' })
+    const stillVisible = await bodyText(page)
+    expectText(stillVisible, lastName.toLowerCase(), 'Existing customers are no longer visible')
+    log('Existing customers, jobs and documents are all still readable')
+
+    await page.goto(`${BASE}/customers/new`, { waitUntil: 'domcontentloaded' })
+    await page.fill('input[name="firstName"]', 'Should')
+    await page.fill('input[name="lastName"]', 'NotExist')
+    await page.fill('input[name="property.line1"]', '1 Blocked St')
+    await page.fill('input[name="property.city"]', 'Charlotte')
+    await page.fill('input[name="property.state"]', 'NC')
+    await page.fill('input[name="property.postalCode"]', '28203')
+    await page.click('button[type="submit"]')
+    await page.waitForTimeout(2000)
+
+    const blockedText = await bodyText(page)
+    expectText(blockedText, 'trial has ended', 'Creating a customer was not blocked')
+
+    const leaked = await withPrisma((prisma) =>
+      prisma.customer.count({ where: { organizationId, lastName: 'NotExist' } }),
+    )
+    if (leaked > 0) fail('A restricted account created a customer anyway')
+    log('Creating new operational data is refused, server-side')
+    await shot(page, '25-restricted')
+
+    // --- Activation, through a genuinely signed webhook ---------------------------
+    const webhookSecret = fromDotEnv('STRIPE_WEBHOOK_SECRET')
+    if (!webhookSecret) {
+      log('STRIPE_WEBHOOK_SECRET is not set — skipping the activation leg')
+    } else {
+      const subscription = await withPrisma((prisma) =>
+        prisma.subscription.update({
+          where: { organizationId },
+          data: { providerName: 'stripe', providerCustomerId: `cus_e2e_${stamp}` },
+        }),
+      )
+
+      const seconds = Math.floor(Date.now() / 1000)
+      const event = {
+        id: `evt_e2e_${stamp}`,
+        object: 'event',
+        api_version: '2025-02-24.acacia',
+        created: seconds,
+        type: 'customer.subscription.updated',
+        livemode: false,
+        pending_webhooks: 0,
+        request: { id: null, idempotency_key: null },
+        data: {
+          object: {
+            id: `sub_e2e_${stamp}`,
+            object: 'subscription',
+            customer: subscription.providerCustomerId,
+            status: 'active',
+            cancel_at_period_end: false,
+            canceled_at: null,
+            current_period_start: seconds,
+            current_period_end: seconds + 30 * 86_400,
+            start_date: seconds,
+            default_payment_method: null,
+            metadata: { organizationId },
+            items: {
+              object: 'list',
+              data: [
+                {
+                  id: `si_e2e_${stamp}`,
+                  object: 'subscription_item',
+                  price: {
+                    id: 'price_e2e_standard',
+                    object: 'price',
+                    unit_amount: 3999,
+                    currency: 'usd',
+                  },
+                },
+              ],
+            },
+          },
+        },
+      }
+
+      const body = JSON.stringify(event)
+
+      // An unsigned delivery must be refused before anything is parsed.
+      const unsigned = await page.request.post(`${BASE}/api/webhooks/stripe`, {
+        headers: { 'Content-Type': 'application/json' },
+        data: body,
+      })
+      if (unsigned.status() !== 400) {
+        fail(`An unsigned webhook returned ${unsigned.status()} instead of 400`)
+      }
+      log('An unsigned webhook is refused')
+
+      const signed = await page.request.post(`${BASE}/api/webhooks/stripe`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'stripe-signature': stripeSignature(body, webhookSecret),
+        },
+        data: body,
+      })
+      if (!signed.ok()) fail(`The signed webhook returned ${signed.status()}`)
+      log('A correctly signed webhook is accepted')
+
+      // Delivered twice, as Stripe routinely does.
+      const replay = await page.request.post(`${BASE}/api/webhooks/stripe`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'stripe-signature': stripeSignature(body, webhookSecret),
+        },
+        data: body,
+      })
+      const replayBody = await replay.json()
+      if (!replayBody.duplicate) fail('A replayed webhook was processed a second time')
+      log('A replayed webhook is recognised and does nothing')
+
+      const activated = await withPrisma((prisma) =>
+        prisma.subscription.findUniqueOrThrow({ where: { organizationId } }),
+      )
+      if (activated.status !== 'ACTIVE') {
+        fail(`The webhook did not activate the account (status ${activated.status})`)
+      }
+      log('The account is active — from the webhook, not from a redirect')
+
+      // --- Full access returns ------------------------------------------------
+      await page.goto(`${BASE}/customers/new`, { waitUntil: 'domcontentloaded' })
+      await page.fill('input[name="firstName"]', 'Now')
+      await page.fill('input[name="lastName"]', `Allowed${stamp}`)
+      await page.fill('input[name="property.line1"]', '2 Restored Way')
+      await page.fill('input[name="property.city"]', 'Charlotte')
+      await page.fill('input[name="property.state"]', 'NC')
+      await page.fill('input[name="property.postalCode"]', '28203')
+      await page.click('button[type="submit"]')
+      await page.waitForURL('**/doors/new', { timeout: 20_000 })
+      log('Full access is back — a new customer saves again')
+      await shot(page, '26-reactivated')
+
+      await page.goto(`${BASE}/today`, { waitUntil: 'domcontentloaded' })
+      const activeText = await bodyText(page)
+      if (contains(activeText, 'your trial has ended')) {
+        fail('The restriction notice is still showing on an active account')
+      }
+      log('The restriction notice is gone')
+    }
+
+    // --- Platform admin -------------------------------------------------------
+    const adminContext = await browser.newContext(PHONE)
+    const adminPage = await adminContext.newPage()
+    try {
+      await adminPage.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
+      await adminPage.fill('input[name="email"]', ADMIN_EMAIL)
+      await adminPage.fill('input[name="password"]', ADMIN_PASSWORD)
+      await adminPage.click('button[type="submit"]')
+      await adminPage.waitForURL('**/admin**', { timeout: 20_000 })
+
+      await adminPage.goto(`${BASE}/admin/companies/${organizationId}`, {
+        waitUntil: 'domcontentloaded',
+      })
+      const adminText = await bodyText(adminPage)
+      expectText(adminText, COMPANY.toLowerCase(), 'Admin does not show the company')
+      expectText(adminText, REFERRAL_CODE.toLowerCase(), 'Admin does not show the attribution')
+      if (webhookSecret) {
+        expectText(adminText, 'active', 'Admin does not reflect the subscription')
+        expectText(adminText, 'stripe subscription', 'Admin does not show the Stripe ids')
+      }
+      log('Platform admin shows the subscription and the affiliate attribution')
+      await shot(adminPage, '27-admin-company')
+
+      await adminPage.goto(`${BASE}/admin/affiliates`, { waitUntil: 'domcontentloaded' })
+      const affiliatesText = await bodyText(adminPage)
+      expectText(affiliatesText, REFERRAL_CODE.toLowerCase(), 'The partner is not listed')
+      expectText(affiliatesText, '20% recurring', 'The commission rate is not shown')
+      log('Affiliate ledger shows the partner, their companies and what they are owed')
+      await shot(adminPage, '28-admin-affiliates')
+    } finally {
+      await adminContext.close()
+    }
 
     // --- Isolation spot check --------------------------------------------------
     const strangerContext = await browser.newContext(PHONE)

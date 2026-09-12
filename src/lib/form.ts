@@ -64,6 +64,32 @@ export function parseForm<T extends z.ZodTypeAny>(
  * Redirects are thrown by Next.js and must pass straight through — catching
  * one here would turn a working redirect into "something went wrong".
  */
+/**
+ * Run an authorization gate and turn a refusal into something the form can
+ * render.
+ *
+ * `requireActiveSubscription` throws, which is right for a page — it belongs
+ * above the render — but wrong for a server action, where an uncaught throw
+ * becomes a generic server error instead of the calm sentence about the
+ * account's data being safe.
+ *
+ *   const gate = await guarded(() => requireActiveSubscription('customer:write'))
+ *   if (!gate.ok) return gate.state
+ *   const session = gate.value
+ */
+export async function guarded<T>(
+  gate: () => Promise<T>,
+  formData?: FormData,
+): Promise<{ ok: true; value: T } | { ok: false; state: FormState }> {
+  try {
+    return { ok: true, value: await gate() }
+  } catch (error) {
+    // A redirect from `requireSession` still has to reach the framework.
+    if (isFrameworkControlFlow(error)) throw error
+    return { ok: false, state: failure(error, formData, 'gate') }
+  }
+}
+
 export function failure(error: unknown, formData?: FormData, context?: string): FormState {
   if (isFrameworkControlFlow(error)) throw error
   return {

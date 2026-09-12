@@ -444,6 +444,14 @@ portal links · platform admin dashboard · PDF documents · schedule views · c
 photo management · rate limiting. Deferred from this list: subscription state enforcement,
 global search, PWA install prompt, and Postgres RLS (evaluated — see above).
 
+**Phase 1c — Make it sellable** *(shipped; see [PHASE-1C.md](PHASE-1C.md))*
+Transactional email with a real provider boundary · password reset · Stripe
+Billing for the $39.99 plan with webhook-driven state · subscription
+enforcement · customer card payments through Stripe Connect Standard (see
+[PAYMENT-MODEL.md](PAYMENT-MODEL.md)) · global search · immutable display
+numbers · inspection draft resilience · communication timeline · affiliate
+attribution and commission tracking.
+
 **Phase 2 — Money in, messages out**
 Stripe payments and Stripe Billing · customer portal (view, select, sign, pay) · SMS and email
 with real providers and templates · automations · affiliate commission records.

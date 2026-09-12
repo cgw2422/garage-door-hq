@@ -60,17 +60,27 @@ export function DataPoint({
   label,
   value,
   className,
+  mono,
 }: {
   label: string
   value: ReactNode
   className?: string
+  /** For identifiers a person will copy — Stripe ids and the like. */
+  mono?: boolean
 }) {
   return (
     <div className={cn('min-w-0', className)}>
       <dt className="text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-ink-subtle">
         {label}
       </dt>
-      <dd className="mt-0.5 truncate text-[0.9375rem] font-medium text-ink">{value}</dd>
+      <dd
+        className={cn(
+          'mt-0.5 truncate font-medium text-ink',
+          mono ? 'font-mono text-xs' : 'text-[0.9375rem]',
+        )}
+      >
+        {value}
+      </dd>
     </div>
   )
 }

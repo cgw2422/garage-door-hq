@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { requireActiveSubscription } from '@/lib/session'
-import { failure, parseForm, type FormState } from '@/lib/form'
+import { failure, parseForm, type FormState, guarded } from '@/lib/form'
 import { createJob } from '@/server/jobs/service'
 
 const schema = z.object({
@@ -19,7 +19,9 @@ const schema = z.object({
 })
 
 export async function createJobAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const session = await requireActiveSubscription('job:write')
+  const gate = await guarded(() => requireActiveSubscription('job:write'), formData)
+  if (!gate.ok) return gate.state
+  const session = gate.value
   const parsed = parseForm(schema, formData)
   if (!parsed.ok) return parsed.state
 

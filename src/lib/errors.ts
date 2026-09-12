@@ -37,6 +37,7 @@ const DOMAIN_ERRORS = new Set([
   'PrefixError',
   'PriceBookError',
   'RateLimitError',
+  'ReviewRequestError',
   'ScheduleError',
   'SignatureError',
   'SizingNotAvailableError',

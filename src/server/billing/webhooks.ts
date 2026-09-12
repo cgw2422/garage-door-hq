@@ -220,6 +220,35 @@ async function dispatch(
         expand: ['default_payment_method'],
       })
       const result = await syncFromStripe(subscription)
+
+      // A paid period may owe an affiliate a commission. Recorded, never paid:
+      // the row is keyed by period, so a replay cannot pay for a month twice.
+      if (
+        result.organizationId &&
+        (event.type === 'invoice.paid' || event.type === 'invoice.payment_succeeded') &&
+        invoice.amount_paid > 0
+      ) {
+        const { recordCommissionForPeriod } = await import('./commissions')
+        const line = invoice.lines?.data?.[0]
+        const periodStart = line?.period?.start
+          ? new Date(line.period.start * 1000)
+          : new Date(invoice.created * 1000)
+        const periodEnd = line?.period?.end
+          ? new Date(line.period.end * 1000)
+          : periodStart
+
+        await recordCommissionForPeriod({
+          organizationId: result.organizationId,
+          periodStart,
+          periodEnd,
+          amountPaidCents: invoice.amount_paid,
+        }).catch((error: unknown) => {
+          // A commission is bookkeeping. It must never fail a subscription
+          // state change, which is what the customer actually paid for.
+          console.error('[stripe:webhook] commission recording failed', error)
+        })
+      }
+
       return result.organizationId
     }
 

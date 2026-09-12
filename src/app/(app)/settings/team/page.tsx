@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { requirePermission } from '@/lib/session'
 import { listInvitations, listMembers } from '@/server/team/service'
 import { PageBody, PageHeader } from '@/components/app/page-header'
+import { emailIsConfigured } from '@/server/email'
 import { TeamManager } from './team-manager'
 
 export const metadata: Metadata = { title: 'Team Members' }
@@ -30,6 +31,8 @@ export default async function TeamPage() {
       <PageBody>
         <TeamManager
           timezone={session.timezone}
+          emailConfigured={emailIsConfigured()}
+          organizationName={session.organizationName}
           currentUserId={session.userId}
           currentRole={session.role}
           members={members.map((membership) => ({

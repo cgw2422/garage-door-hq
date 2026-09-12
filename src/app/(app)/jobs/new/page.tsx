@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
-import { requirePermission } from '@/lib/session'
+import { getAccessState, requirePermission } from '@/lib/session'
 import { PageBody, PageHeader } from '@/components/app/page-header'
+import { RestrictedNotice } from '@/components/app/billing-banner'
 import { Card, Divider, EmptyState, ListRow } from '@/components/ui/card'
 import { ButtonLink } from '@/components/ui/button'
 import { PlusIcon, UsersIcon } from '@/components/ui/icons'
@@ -22,6 +23,7 @@ export default async function NewJobPage({
   }>
 }) {
   const session = await requirePermission('job:write')
+  const access = await getAccessState()
   const params = await searchParams
 
   // Step one is always "who is this for?". Everything else follows from it.
@@ -51,6 +53,8 @@ export default async function NewJobPage({
       <>
         <PageHeader title="New Job" subtitle="Who is this for?" backHref="/jobs" />
         <PageBody>
+        <RestrictedNotice access={access} />
+
           <CustomerSearch initialQuery={query} basePath="/jobs/new" />
           <ButtonLink href="/customers/new" variant="secondary" fullWidth icon={<PlusIcon />}>
             New customer

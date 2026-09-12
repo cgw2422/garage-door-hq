@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { requireActiveSubscription } from '@/lib/session'
-import { failure, parseForm, type FormState } from '@/lib/form'
+import { failure, parseForm, type FormState, guarded } from '@/lib/form'
 import {
   addCatalogItemToEstimate,
   addPackageToEstimate,
@@ -27,7 +27,9 @@ const addPackageSchema = z.object({
 })
 
 export async function addPackageAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const session = await requireActiveSubscription('estimate:write')
+  const gate = await guarded(() => requireActiveSubscription('estimate:write'))
+  if (!gate.ok) return gate.state
+  const session = gate.value
   const parsed = parseForm(addPackageSchema, formData)
   if (!parsed.ok) return parsed.state
 
@@ -48,7 +50,9 @@ const addItemSchema = z.object({
 })
 
 export async function addItemAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const session = await requireActiveSubscription('estimate:write')
+  const gate = await guarded(() => requireActiveSubscription('estimate:write'))
+  if (!gate.ok) return gate.state
+  const session = gate.value
   const parsed = parseForm(addItemSchema, formData)
   if (!parsed.ok) return parsed.state
 
@@ -62,19 +66,25 @@ export async function addItemAction(_prev: FormState, formData: FormData): Promi
 }
 
 export async function removeItemAction(input: { estimateId: string; itemId: string }) {
-  const session = await requireActiveSubscription('estimate:write')
+  const gate = await guarded(() => requireActiveSubscription('estimate:write'))
+  if (!gate.ok) return gate.state
+  const session = gate.value
   await removeEstimateItem(session, input.itemId)
   refresh(input.estimateId)
 }
 
 export async function removeOptionAction(input: { estimateId: string; optionId: string }) {
-  const session = await requireActiveSubscription('estimate:write')
+  const gate = await guarded(() => requireActiveSubscription('estimate:write'))
+  if (!gate.ok) return gate.state
+  const session = gate.value
   await removeEstimateOption(session, input.optionId)
   refresh(input.estimateId)
 }
 
 export async function setRecommendedAction(input: { estimateId: string; optionId: string }) {
-  const session = await requireActiveSubscription('estimate:write')
+  const gate = await guarded(() => requireActiveSubscription('estimate:write'))
+  if (!gate.ok) return gate.state
+  const session = gate.value
   await setRecommendedOption(session, input.optionId)
   refresh(input.estimateId)
 }
@@ -84,7 +94,9 @@ export async function setQuantityAction(input: {
   itemId: string
   quantity: number
 }) {
-  const session = await requireActiveSubscription('estimate:write')
+  const gate = await guarded(() => requireActiveSubscription('estimate:write'))
+  if (!gate.ok) return gate.state
+  const session = gate.value
   await updateEstimateItemQuantity(session, { itemId: input.itemId, quantity: input.quantity })
   refresh(input.estimateId)
 }
@@ -97,7 +109,9 @@ const taxSchema = z.object({
 })
 
 export async function setTaxRateAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const session = await requireActiveSubscription('estimate:write')
+  const gate = await guarded(() => requireActiveSubscription('estimate:write'))
+  if (!gate.ok) return gate.state
+  const session = gate.value
   const parsed = parseForm(taxSchema, formData)
   if (!parsed.ok) return parsed.state
 
@@ -115,7 +129,9 @@ export async function setTaxRateAction(_prev: FormState, formData: FormData): Pr
 }
 
 export async function presentEstimateAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const session = await requireActiveSubscription('estimate:write')
+  const gate = await guarded(() => requireActiveSubscription('estimate:write'))
+  if (!gate.ok) return gate.state
+  const session = gate.value
   const estimateId = String(formData.get('estimateId') ?? '')
 
   try {

@@ -164,7 +164,7 @@ export async function resendInvitation(session: AppSession, invitationId: string
     },
   })
 
-  return { token, acceptUrl: acceptUrlFor(token), expiresAt }
+  return { invitationId, token, acceptUrl: acceptUrlFor(token), expiresAt }
 }
 
 export async function revokeInvitation(session: AppSession, invitationId: string) {

@@ -7,6 +7,9 @@ import { formatJobNumber } from '@/lib/numbering'
 import { lowStockForLocation } from '@/server/inventory/ledger'
 import { PageBody, PageHeader } from '@/components/app/page-header'
 import { BillingBanner } from '@/components/app/billing-banner'
+import { SetupChecklistCard } from '@/components/app/setup-checklist'
+import { loadSetupChecklist } from '@/server/organizations/setup-checklist'
+import { maybeSendDueReviewRequests } from '@/server/communications/review-requests'
 import { ButtonLink, CircleAction } from '@/components/ui/button'
 import { Card, CardHeader, Divider, EmptyState, ListRow, SectionHeading } from '@/components/ui/card'
 import { RevenueTile, StatRow, StatTile } from '@/components/ui/stat'
@@ -21,6 +24,7 @@ import {
   NavigationIcon,
   PhoneIcon,
   PlusIcon,
+  SearchIcon,
   UsersIcon,
 } from '@/components/ui/icons'
 
@@ -30,7 +34,14 @@ export const dynamic = 'force-dynamic'
 export default async function TodayPage() {
   const session = await requireSession()
   const access = await getAccessState()
-  const today = await loadToday(session)
+
+  // No worker process yet; the queue is nudged from ordinary traffic. Safe to
+  // call anywhere because every send is guarded and idempotent.
+  maybeSendDueReviewRequests()
+  const [today, checklist] = await Promise.all([
+    loadToday(session),
+    loadSetupChecklist(session),
+  ])
   const lowStock = session.defaultLocationId
     ? await lowStockForLocation(session.organizationId, session.defaultLocationId)
     : []
@@ -55,7 +66,19 @@ export default async function TodayPage() {
       />
 
       <PageBody>
+        {/* Tapping this opens the real search screen. A link rather than an
+            input, so the keyboard comes up on a page built for it. */}
+        <Link
+          href="/search"
+          className="flex h-12 items-center gap-2.5 rounded-[--radius-control] border border-hairline-strong bg-surface px-3.5 text-ink-subtle active:bg-surface-sunken"
+        >
+          <SearchIcon className="h-[1.15em] w-[1.15em]" />
+          <span className="text-[0.9375rem]">Search customers, jobs, parts…</span>
+        </Link>
+
         <BillingBanner access={access} />
+
+        <SetupChecklistCard checklist={checklist} />
 
         <RevenueTile
           label="Today's Revenue"

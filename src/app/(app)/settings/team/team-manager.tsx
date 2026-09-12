@@ -51,6 +51,8 @@ export function TeamManager({
   invitations,
   locations,
   timezone,
+  emailConfigured,
+  organizationName,
 }: {
   currentUserId: string
   currentRole: OrgRole
@@ -63,29 +65,58 @@ export function TeamManager({
    * and in the browser and makes React discard the server-rendered markup.
    */
   timezone: string
+  /** False when no email provider is configured; the UI then never claims a send. */
+  emailConfigured: boolean
+  organizationName: string
 }) {
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteState, invite] = useActionState<FormState, FormData>(inviteMemberAction, {})
   const [resendState, resend] = useActionState<FormState, FormData>(resendInvitationAction, {})
 
-  const issuedLink = inviteState.values?.inviteUrl ?? resendState.values?.inviteUrl
-  const issuedTo = inviteState.values?.invitedEmail ?? resendState.values?.invitedEmail
+  const latest = inviteState.values?.inviteUrl ? inviteState.values : resendState.values
+  const issuedLink = latest?.inviteUrl
+  const issuedTo = latest?.invitedEmail
+  const delivered = latest?.delivery === 'sent'
+  const deliveryError = latest?.deliveryError
 
   return (
     <>
-      <Alert tone="warning" title="Email delivery is not connected yet">
-        Invitations are created and are valid immediately, but nothing is emailed. Copy the link
-        below and send it to the person yourself.
-      </Alert>
+      {!emailConfigured ? (
+        <Alert tone="warning" title="Email delivery is not connected">
+          Invitations are created and valid immediately, but nothing will be emailed from this
+          deployment. Copy the link and send it yourself.
+        </Alert>
+      ) : null}
 
       {issuedLink ? (
-        <Card className="border-brand-200 bg-brand-50">
-          <CardHeader title={`Invitation link for ${issuedTo ?? 'your teammate'}`} />
-          <p className="break-all rounded-[--radius-control] border border-brand-200 bg-white px-3 py-2.5 text-xs text-ink">
+        <Card
+          className={delivered ? 'border-success-200 bg-success-50' : 'border-warning-200 bg-warning-50'}
+        >
+          <CardHeader
+            title={
+              delivered
+                ? `Invitation emailed to ${issuedTo ?? 'your teammate'}`
+                : `Invitation created for ${issuedTo ?? 'your teammate'}`
+            }
+          />
+
+          {delivered ? (
+            <p className="text-sm leading-relaxed text-success-700">
+              They&apos;ll get an email from {organizationName} with a link to join. Here it is
+              too, in case you&apos;d rather text it to them.
+            </p>
+          ) : (
+            <p className="text-sm leading-relaxed text-warning-700">
+              {deliveryError || 'The email could not be sent.'} The invitation itself is fine —
+              send them this link and it will work.
+            </p>
+          )}
+
+          <p className="mt-2.5 break-all rounded-[--radius-control] border border-hairline bg-white px-3 py-2.5 text-xs text-ink">
             {issuedLink}
           </p>
           <CopyButton value={issuedLink} />
-          <p className="mt-2 text-xs leading-relaxed text-brand-800">
+          <p className="mt-2 text-xs leading-relaxed text-ink-muted">
             Anyone with this link can join your company with the role you chose. It expires in
             14 days, and re-sending replaces it.
           </p>

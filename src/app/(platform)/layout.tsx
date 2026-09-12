@@ -22,7 +22,18 @@ export default async function PlatformLayout({ children }: { children: ReactNode
               Platform
             </span>
           </Link>
-          <span className="truncate text-sm text-navy-300">{user.email}</span>
+          <nav className="flex items-center gap-4">
+            <Link href="/admin" className="text-sm font-semibold text-navy-200 hover:text-white">
+              Companies
+            </Link>
+            <Link
+              href="/admin/affiliates"
+              className="text-sm font-semibold text-navy-200 hover:text-white"
+            >
+              Affiliates
+            </Link>
+            <span className="hidden truncate text-sm text-navy-400 sm:inline">{user.email}</span>
+          </nav>
         </div>
       </header>
       <main className="mx-auto w-full max-w-5xl px-3 py-5">{children}</main>

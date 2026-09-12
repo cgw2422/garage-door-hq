@@ -7,6 +7,8 @@ import { formatDate } from '@/server/jobs/queries'
 import { formatDoorSize } from '@/lib/measure'
 import { formatDoorNumber, formatInvoiceNumber, formatJobNumber } from '@/lib/numbering'
 import { PageBody, PageHeader } from '@/components/app/page-header'
+import { CommunicationTimeline } from '@/components/app/communication-timeline'
+import { loadCustomerTimeline } from '@/server/communications/timeline'
 import { ButtonLink, CircleAction } from '@/components/ui/button'
 import { Card, Divider, EmptyState, ListRow, SectionHeading } from '@/components/ui/card'
 import { DataGrid, DataPoint } from '@/components/ui/stat'
@@ -66,6 +68,8 @@ export default async function CustomerProfilePage({
     },
   })
   if (!customer) notFound()
+
+  const timeline = await loadCustomerTimeline(session, customer.id)
 
   const lifetimeRevenue = await session.db.payment.aggregate({
     where: { customerId: customer.id, status: 'SUCCEEDED' },
@@ -268,6 +272,8 @@ export default async function CustomerProfilePage({
             </Card>
           </div>
         ) : null}
+
+        <CommunicationTimeline entries={timeline} timezone={session.timezone} />
 
         <ButtonLink href={`/jobs/new?customerId=${customer.id}`} size="lg" fullWidth icon={<PlusIcon />}>
           New job for {customer.firstName}

@@ -12,7 +12,7 @@ import { Card, Divider, EmptyState, SectionHeading } from '@/components/ui/card'
 import { Field, Input, Select } from '@/components/ui/field'
 import { SubmitButton } from '@/components/ui/submit-button'
 import { PageBody, StickyActions } from '@/components/app/page-header'
-import { ShareLink } from '@/components/app/share-link'
+import { SendDocument } from '@/components/app/send-document'
 import { Chip } from '@/components/ui/status'
 import { DocumentIcon, MinusIcon, PlusIcon } from '@/components/ui/icons'
 import {
@@ -65,7 +65,9 @@ export function EstimateBuilder({
   defaultTaxRateBps,
   portalLink,
   signature,
-  timezone,
+  customerEmail,
+  customerName,
+  emailConfigured,
 }: {
   estimate: {
     id: string
@@ -98,8 +100,10 @@ export function EstimateBuilder({
     version: number | null
     hash: string | null
   } | null
-  /** The company's timezone, so dates render the same on both sides. */
-  timezone: string
+  customerEmail: string | null
+  customerName: string
+  /** False when no email provider is set; the send panel then never claims one. */
+  emailConfigured: boolean
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -113,7 +117,7 @@ export function EstimateBuilder({
 
   return (
     <>
-      <PageBody className="pb-40">
+      <PageBody>
         {signature ? (
           <Card className="border-success-100 bg-success-50">
             <p className="text-sm font-semibold text-success-700">
@@ -292,12 +296,13 @@ export function EstimateBuilder({
         ) : null}
 
         {hasLines ? (
-          <ShareLink
-            timezone={timezone}
+          <SendDocument
             target="ESTIMATE"
             documentId={estimate.id}
+            customerEmail={customerEmail}
+            customerName={customerName}
+            emailConfigured={emailConfigured}
             existingLink={portalLink}
-            revalidate={`/estimates/${estimate.id}`}
             label="Send to the customer"
           />
         ) : null}

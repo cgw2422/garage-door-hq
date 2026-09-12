@@ -7,6 +7,7 @@ import { formatEstimateNumber } from '@/lib/numbering'
 import { PageHeader } from '@/components/app/page-header'
 import { activeLinkFor } from '@/server/portal/service'
 import { Chip } from '@/components/ui/status'
+import { emailIsConfigured } from '@/server/email'
 import { EstimateBuilder } from './builder'
 
 export const dynamic = 'force-dynamic'
@@ -87,7 +88,12 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
         }
       />
       <EstimateBuilder
-        timezone={session.timezone}
+        customerEmail={estimate.customer.email}
+        customerName={
+          estimate.customer.companyName ??
+          `${estimate.customer.firstName} ${estimate.customer.lastName}`
+        }
+        emailConfigured={emailIsConfigured()}
         estimate={{
           id: estimate.id,
           number: estimate.number,

@@ -73,6 +73,7 @@ export default async function InspectionPage({ params }: { params: Promise<{ id:
           photoCount: item.photos.length,
           group: groupByKey.get(item.componentKey)?.group ?? 'Door',
           hint: groupByKey.get(item.componentKey)?.hint ?? null,
+          updatedAt: item.updatedAt?.toISOString() ?? null,
         }))}
         remedies={Object.fromEntries(remedies)}
         estimate={

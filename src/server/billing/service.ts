@@ -264,7 +264,15 @@ export async function syncFromStripe(
   if (!organizationId) return { organizationId: null, status: null }
 
   const existing = await prisma.subscription.findUnique({ where: { organizationId } })
-  if (!existing) return { organizationId, status: null }
+  if (!existing) {
+    // The id came from Stripe metadata and names no company we know — a
+    // deleted account, a test event, or a wrong environment's webhook pointed
+    // at us. Return null rather than the unresolved id: the caller stamps it
+    // onto the webhook record, and a foreign key violation there would turn a
+    // harmless stray event into a 500 that Stripe retries for days.
+    console.warn(`[stripe] subscription event for unknown organization ${organizationId}`)
+    return { organizationId: null, status: null }
+  }
 
   // A comp is a deliberate decision by a person and outranks Stripe. Record
   // the Stripe ids so nothing is lost, but do not change the status.

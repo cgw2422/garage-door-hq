@@ -23,6 +23,8 @@ import {
 } from '@/components/ui/icons'
 import { JobTabs, type JobTab } from './tabs'
 import { JobStatusActions } from './status-actions'
+import { ReviewRequestPanel } from './review-request'
+import { loadReviewContext } from '@/server/communications/review-requests'
 import { PhotoGrid } from '@/components/app/photo-grid'
 import { PhotoCapture } from '@/components/app/photo-capture'
 import { READY_PHOTOS } from '@/server/media/photos'
@@ -94,6 +96,12 @@ export default async function JobDetailPage({
   const springSystem = job.door?.springSystems[0] ?? null
   const customerName =
     job.customer.companyName ?? `${job.customer.firstName} ${job.customer.lastName}`
+
+  // Only needed once the work is done; skipped entirely otherwise.
+  const reviewContext =
+    job.status === 'COMPLETED'
+      ? await loadReviewContext(session, job.id)
+      : { request: null, destinationConfigured: false, enabled: false }
 
   return (
     <>
@@ -494,6 +502,21 @@ export default async function JobDetailPage({
               ))
             )}
           </Card>
+        ) : null}
+
+        {job.status === 'COMPLETED' ? (
+          <ReviewRequestPanel
+            jobId={job.id}
+            sentAt={
+              reviewContext.request?.sentAt
+                ? formatDate(reviewContext.request.sentAt, session.timezone)
+                : null
+            }
+            queued={Boolean(reviewContext.request && !reviewContext.request.sentAt)}
+            customerHasEmail={Boolean(job.customer.email)}
+            destinationConfigured={reviewContext.destinationConfigured}
+            enabled={reviewContext.enabled}
+          />
         ) : null}
       </PageBody>
 

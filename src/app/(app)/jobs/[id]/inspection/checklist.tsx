@@ -12,6 +12,8 @@ import { Alert } from '@/components/ui/alert'
 import { Button, ButtonLink } from '@/components/ui/button'
 import { Card, Divider, SectionHeading } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/field'
+import { DraftStatus } from '@/components/app/draft-status'
+import { useFieldDraft } from '@/components/app/use-field-draft'
 import { SubmitButton } from '@/components/ui/submit-button'
 import { PageBody, StickyActions } from '@/components/app/page-header'
 import { PhotoCapture } from '@/components/app/photo-capture'
@@ -35,6 +37,8 @@ export interface ChecklistItem {
   photoCount: number
   group: string
   hint: string | null
+  /** ISO timestamp, so a local draft never overwrites a newer server value. */
+  updatedAt: string | null
 }
 
 interface EstimateSummary {
@@ -136,7 +140,7 @@ export function InspectionChecklist({
 
   return (
     <>
-      <PageBody className="pb-40">
+      <PageBody>
         <Card>
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -243,8 +247,20 @@ function ChecklistRow({
   onAddTiered: () => void
 }) {
   const [showDetail, setShowDetail] = useState(false)
-  const [note, setNote] = useState(item.note ?? '')
   const actionable = isActionable(item.status)
+
+  // Notes are the one thing on this screen that is expensive to lose: a
+  // technician types what they are looking at, standing in a garage, often on
+  // one bar. The draft hook keeps it on the device until the server confirms.
+  const draft = useFieldDraft({
+    key: `inspection:${item.id}:note`,
+    serverValue: item.note ?? '',
+    serverUpdatedAt: item.updatedAt,
+    save: (value) => setNoteAction({ itemId: item.id, note: value || null, jobId }),
+  })
+
+  // A restored draft is worth seeing without opening the row.
+  const hasUnsyncedNote = draft.state === 'unsynced' || draft.state === 'failed'
 
   const tiers = new Set(remedies.map((remedy) => remedy.tier))
   const hasFullSet = tiers.has('GOOD') && tiers.has('BETTER') && tiers.has('BEST')
@@ -338,8 +354,13 @@ function ChecklistRow({
             {item.photoCount}
           </span>
         ) : null}
-        {item.note && !showDetail ? (
-          <span className="min-w-0 truncate text-xs text-ink-muted">· {item.note}</span>
+        {draft.value && !showDetail ? (
+          <span className="min-w-0 truncate text-xs text-ink-muted">· {draft.value}</span>
+        ) : null}
+        {hasUnsyncedNote && !showDetail ? (
+          <Chip tone="warning" dot>
+            Not saved
+          </Chip>
         ) : null}
       </div>
 
@@ -347,14 +368,17 @@ function ChecklistRow({
         <div className="mt-2 space-y-2">
           <Textarea
             rows={2}
-            value={note}
+            value={draft.value}
             placeholder="What did you see?"
-            onChange={(event) => setNote(event.target.value)}
-            onBlur={() => {
-              if (note !== (item.note ?? '')) {
-                void setNoteAction({ itemId: item.id, note: note || null, jobId })
-              }
-            }}
+            onChange={(event) => draft.change(event.target.value)}
+            onBlur={() => void draft.flush()}
+          />
+
+          <DraftStatus
+            state={draft.state}
+            error={draft.error}
+            restored={draft.restored}
+            onRetry={() => void draft.flush()}
           />
           <PhotoCapture
             compact
