@@ -141,6 +141,39 @@ product supports and says so on screen, so they never make it 503.
 
 It also works as a platform health check.
 
+## Loading the demo company
+
+The demo company — Precision Garage Door Services, with a 39-item price book,
+spring inventory, Door Passports with service history, jobs, a signed estimate
+and an unpaid invoice — is useful for seeing the product with something in it.
+It is a tenant like any other: it sees no other company's data, and other
+companies never see it.
+
+`npm run db:seed` is **not** the way to load it on a deployment. That one
+truncates every table first, which is right for a laptop and the end of
+someone's business anywhere else. Two safe paths share the same data and none
+of that behaviour. Both refuse if the demo company is already there, and
+neither ever deletes anything.
+
+**Over HTTP**, which needs nothing installed:
+
+1. Set `DEMO_SEED_TOKEN` to a long random string (24 characters minimum —
+   `openssl rand -base64 32`) and let it redeploy.
+2. `curl -X POST -H "x-seed-token: <the token>" https://<your-domain>/api/admin/seed-demo`
+3. Unset `DEMO_SEED_TOKEN`.
+
+With the variable unset or too short the route answers 404 to everything, so
+it does not exist unless you decide it does. It is POST-only, so a link
+preview or a crawler cannot fire it, and rate limited either way.
+
+**From a terminal with the database reachable** (`railway run`, or `psql`
+access): `npm run db:demo`. It is idempotent, so it is safe to leave in a start
+command.
+
+Sign in as `mike@precisiongaragedoor.test` with `DEMO_PASSWORD` (default
+`GarageDoorHQ2026!` — set `DEMO_PASSWORD` before loading on anything public).
+`tony@…` is the technician, so you can see the role difference.
+
 ## After the first deploy
 
 1. Open `/api/health` and confirm `"ok": true`.

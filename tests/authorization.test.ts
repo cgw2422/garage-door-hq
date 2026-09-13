@@ -51,6 +51,8 @@ const PUBLIC_BY_DESIGN: Record<string, string> = {
     'Customer invoice PDF, reached only through the opaque token.',
   'src/app/api/files/upload/[token]/route.ts':
     'Local-disk development upload target; the HMAC-signed token is the credential.',
+  'src/app/api/admin/seed-demo/route.ts':
+    'Loading the demo company, for an operator who has an empty database and therefore no account to authenticate as. The credential is an operator-set token; the route 404s when it is unset or too short, is rate limited, adds one tenant, refuses if that tenant exists, and can neither read nor delete anything.',
   'src/app/api/health/route.ts':
     'Whether the deployment is finished. Unauthenticated because the failure it explains is one where nobody can sign in; it reports presence only — never a key, a URL or a value.',
   'src/app/api/webhooks/stripe/route.ts':

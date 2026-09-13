@@ -19,7 +19,8 @@
     "storage:sweep": "tsx scripts/storage-sweep.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
-    "start:local": "next start -p ${PORT:-3000}"
+    "start:local": "next start -p ${PORT:-3000}",
+    "db:demo": "tsx scripts/seed-demo.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
