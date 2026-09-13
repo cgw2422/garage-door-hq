@@ -51,6 +51,8 @@ const PUBLIC_BY_DESIGN: Record<string, string> = {
     'Customer invoice PDF, reached only through the opaque token.',
   'src/app/api/files/upload/[token]/route.ts':
     'Local-disk development upload target; the HMAC-signed token is the credential.',
+  'src/app/api/health/route.ts':
+    'Whether the deployment is finished. Unauthenticated because the failure it explains is one where nobody can sign in; it reports presence only — never a key, a URL or a value.',
   'src/app/api/webhooks/stripe/route.ts':
     'Stripe has no session. Authenticated by its signature over the exact request bytes, which is verified before the body is parsed as anything.',
 }

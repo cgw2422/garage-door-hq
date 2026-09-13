@@ -3,7 +3,29 @@
 Written for Railway, because that is where this is going first. Nothing here is
 Railway-specific except the variable-reference syntax.
 
-## The one that bites first
+## The two that bite first
+
+### "There was a problem with the server configuration"
+
+`/api/auth/callback/credentials` answering with
+
+```json
+{"message":"There was a problem with the server configuration. Check the server logs for more information."}
+```
+
+means **`AUTH_SECRET` is unset or empty**. Auth.js checks it before it does
+anything else and refuses the whole request. Generate one with `openssl rand
+-base64 32` and set it.
+
+Two ways to get this wrong that look like setting nothing at all: an empty
+value (`.env.example` ships `AUTH_SECRET=""` for you to fill in), and the v4
+name `NEXTAUTH_SECRET`, which this version does not read.
+
+The app now catches this before Auth.js does: sign-in returns you to the login
+screen with a sentence naming the variable, and the logs carry one line saying
+the same. `GET /api/health` reports it too.
+
+### Signing in lands on localhost
 
 Signing in on the deployed site and landing on
 `localhost:3000/api/auth/callback/credentials` — "this site can't be reached" —
@@ -22,9 +44,15 @@ only when you are not on port 3000.
 homeowner taps, the invitation a technician opens, the page Stripe returns to
 after a payment. Left at localhost it does not crash anything — it emails
 customers a link to their own machine — so `appBaseUrl()` refuses to build one
-in production rather than send it. It is a `NEXT_PUBLIC_` variable, so it is
-read at build time as well as run time: set it before the build, and redeploy
-after changing it.
+in production rather than send it.
+
+One catch, worth knowing before it wastes an afternoon: `NEXT_PUBLIC_` values
+are **inlined when the app is built**, server code included. Setting
+`NEXT_PUBLIC_APP_URL` on a running deployment changes nothing until the next
+build. Railway exposes service variables to the build, so setting it there and
+redeploying is enough — but if you ever need to change the address without a
+rebuild, set **`APP_URL`** instead. It is read at run time and takes
+precedence.
 
 ## Variables
 
@@ -33,9 +61,10 @@ after changing it.
 | Variable | Value |
 | --- | --- |
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` — reference the Postgres service, don't paste the string |
-| `AUTH_SECRET` | `openssl rand -base64 32` |
+| `AUTH_SECRET` | `openssl rand -base64 32` — not `NEXTAUTH_SECRET`, and not blank |
 | `AUTH_TRUST_HOST` | `true` |
-| `NEXT_PUBLIC_APP_URL` | the public address, e.g. `https://app.garagedoorhq.com` |
+| `NEXT_PUBLIC_APP_URL` | the public address, e.g. `https://app.garagedoorhq.com` (baked at build time) |
+| `APP_URL` | optional; the same address, read at run time, and wins over the baked one |
 | `NEXT_PUBLIC_APP_NAME` | `Garage Door HQ` |
 
 Do **not** set `PORT`; Railway injects it and `npm start` reads it. Do **not**
@@ -92,9 +121,30 @@ That means a container that will not start is often a migration that could not
 run: check that `DATABASE_URL` resolves. `npm run start:local` skips the
 migration step when you want the server without it.
 
+## Checking a deployment
+
+`GET /api/health` answers 200 when the deployment can work and 503 when it
+cannot, with a body naming what is wrong:
+
+```json
+{
+  "ok": false,
+  "required": { "database": "ok", "authSecret": "missing", "appUrl": "ok" },
+  "optional": { "storage": "local", "email": "not configured", "stripe": "not configured" }
+}
+```
+
+It reports presence only — never a key, a URL or a value — and needs no
+session, because the failure it exists to explain is one where nobody can sign
+in. The three `required` checks decide `ok`; the `optional` ones are states the
+product supports and says so on screen, so they never make it 503.
+
+It also works as a platform health check.
+
 ## After the first deploy
 
-1. Open the site, sign up, and confirm you land on `/today` — not on localhost.
-2. Send yourself an estimate and check the link in the email opens the portal.
-3. Check `/settings/billing` reports the trial and its end date.
-4. Trigger a test event from the Stripe dashboard and confirm it is recorded.
+1. Open `/api/health` and confirm `"ok": true`.
+2. Open the site, sign up, and confirm you land on `/today` — not on localhost.
+3. Send yourself an estimate and check the link in the email opens the portal.
+4. Check `/settings/billing` reports the trial and its end date.
+5. Trigger a test event from the Stripe dashboard and confirm it is recorded.

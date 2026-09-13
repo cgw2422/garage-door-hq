@@ -7,7 +7,13 @@
  * it is a customer receiving a link to `localhost:3000`, which is why the
  * checked form below refuses to build one in production rather than mailing it.
  *
- * `AUTH_URL` is accepted as a fallback because it names the same origin, but
+ * Three variables, in order. `APP_URL` is read at run time and wins, because
+ * `NEXT_PUBLIC_APP_URL` is inlined into the bundle when the app is built —
+ * including on the server — so changing it on a running deployment does
+ * nothing until the next build. Verified, not assumed: the value appears as a
+ * literal in `.next/server`.
+ *
+ * `AUTH_URL` is accepted as a last fallback because it names the same origin, but
  * note that Auth.js treats `AUTH_URL` as authoritative for its own redirects:
  * a stale value there sends sign-in to the wrong host regardless of anything
  * here. On a platform that terminates TLS and forwards the host (Railway,
@@ -27,7 +33,8 @@ export class AppUrlError extends Error {
 }
 
 function configured(): string {
-  const raw = process.env.NEXT_PUBLIC_APP_URL || process.env.AUTH_URL || ''
+  const raw =
+    process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.AUTH_URL || ''
   return raw.trim().replace(/\/+$/, '')
 }
 

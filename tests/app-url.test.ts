@@ -11,7 +11,7 @@ import { userMessage } from '@/lib/errors'
  * than guess, and these tests pin that behaviour down.
  */
 
-const KEYS = ['NEXT_PUBLIC_APP_URL', 'AUTH_URL', 'NODE_ENV'] as const
+const KEYS = ['APP_URL', 'NEXT_PUBLIC_APP_URL', 'AUTH_URL', 'NODE_ENV'] as const
 const original = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]))
 
 function setEnv(values: Partial<Record<(typeof KEYS)[number], string | undefined>>) {
@@ -25,7 +25,12 @@ afterEach(() => setEnv(original))
 
 describe('in development', () => {
   it('falls back to localhost when nothing is configured', () => {
-    setEnv({ NODE_ENV: 'development', NEXT_PUBLIC_APP_URL: undefined, AUTH_URL: undefined })
+    setEnv({
+      NODE_ENV: 'development',
+      APP_URL: undefined,
+      NEXT_PUBLIC_APP_URL: undefined,
+      AUTH_URL: undefined,
+    })
     expect(appBaseUrl()).toBe('http://localhost:3000')
   })
 
@@ -41,9 +46,22 @@ describe('in production', () => {
     expect(appBaseUrl()).toBe('https://app.example.com')
   })
 
+  // NEXT_PUBLIC_APP_URL is inlined at build time, even in server code, so a
+  // deployment that changes it without rebuilding keeps the old value. APP_URL
+  // is read at run time and therefore wins.
+  it('prefers APP_URL, which is read at run time', () => {
+    setEnv({
+      NODE_ENV: 'production',
+      APP_URL: 'https://app.example.com',
+      NEXT_PUBLIC_APP_URL: 'https://baked-at-build-time.example.com',
+    })
+    expect(appBaseUrl()).toBe('https://app.example.com')
+  })
+
   it('falls back to AUTH_URL when the public variable is unset', () => {
     setEnv({
       NODE_ENV: 'production',
+      APP_URL: undefined,
       NEXT_PUBLIC_APP_URL: undefined,
       AUTH_URL: 'https://app.example.com',
     })
@@ -51,7 +69,12 @@ describe('in production', () => {
   })
 
   it('refuses to build a link when nothing is configured', () => {
-    setEnv({ NODE_ENV: 'production', NEXT_PUBLIC_APP_URL: undefined, AUTH_URL: undefined })
+    setEnv({
+      NODE_ENV: 'production',
+      APP_URL: undefined,
+      NEXT_PUBLIC_APP_URL: undefined,
+      AUTH_URL: undefined,
+    })
     expect(() => appBaseUrl()).toThrow(AppUrlError)
   })
 
@@ -89,7 +112,12 @@ describe('in production', () => {
 
 describe('the unchecked form', () => {
   it('never throws, because its callers only display the value', () => {
-    setEnv({ NODE_ENV: 'production', NEXT_PUBLIC_APP_URL: undefined, AUTH_URL: undefined })
+    setEnv({
+      NODE_ENV: 'production',
+      APP_URL: undefined,
+      NEXT_PUBLIC_APP_URL: undefined,
+      AUTH_URL: undefined,
+    })
     expect(appBaseUrlUnchecked()).toBe('http://localhost:3000')
   })
 })

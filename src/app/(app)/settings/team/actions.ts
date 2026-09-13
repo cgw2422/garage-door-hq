@@ -14,6 +14,7 @@ import {
 } from '@/server/team/service'
 import { signIn } from '@/lib/auth'
 import { sendInvitationEmail } from '@/server/communications/dispatch'
+import { authSecretConfigured } from '@/lib/readiness'
 
 const ROLES = ['OWNER', 'ADMIN', 'OFFICE', 'TECHNICIAN'] as const
 
@@ -168,7 +169,7 @@ export async function acceptInvitationAction(
 
   // A brand-new user just chose their password, so sign them straight in
   // rather than bouncing them to a login screen they have no history with.
-  if (parsed.data.password) {
+  if (parsed.data.password && authSecretConfigured()) {
     await signIn('credentials', {
       email,
       password: parsed.data.password,

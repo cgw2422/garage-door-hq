@@ -16,11 +16,24 @@ function SubmitButton() {
   )
 }
 
-export function LoginForm({ justReset }: { justReset?: boolean }) {
+export function LoginForm({
+  justReset,
+  configurationError,
+}: {
+  justReset?: boolean
+  /** Set when the deployment itself is unfinished, not when a password is wrong. */
+  configurationError?: string
+}) {
   const [state, formAction] = useActionState<LoginState, FormData>(authenticate, {})
 
   return (
     <form action={formAction} className="mt-5 space-y-4">
+      {configurationError ? (
+        <p role="alert" className="rounded-[--radius-control] bg-danger-50 px-3 py-2.5 text-sm font-medium text-danger-700">
+          {configurationError}
+        </p>
+      ) : null}
+
       {justReset ? (
         <p className="rounded-[--radius-control] bg-success-50 px-3 py-2.5 text-sm font-medium text-success-700">
           Your password has been changed. Sign in with the new one.
