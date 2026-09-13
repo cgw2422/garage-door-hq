@@ -32,6 +32,27 @@ export interface SetupChecklist {
   dismissed: boolean
 }
 
+/**
+ * The actions that count as "these are our prices now".
+ *
+ * Answered from the audit trail, because comparing against the starter
+ * numbers would be guesswork — a company may legitimately charge exactly what
+ * the starter catalog suggests.
+ */
+export const PRICE_REVIEW_ACTIONS = [
+  'pricebook.item_updated',
+  'pricebook.item_created',
+  'pricebook.package_created',
+]
+
+/** Has this company touched its price book? */
+export async function hasSetOwnPrices(session: AppSession): Promise<boolean> {
+  const edits = await session.db.auditLog.count({
+    where: { action: { in: PRICE_REVIEW_ACTIONS } },
+  })
+  return edits > 0
+}
+
 export async function loadSetupChecklist(session: AppSession): Promise<SetupChecklist> {
   const [organization, priceEdits, stocked, customers, paymentAccount, members] =
     await Promise.all([
@@ -46,16 +67,7 @@ export async function loadSetupChecklist(session: AppSession): Promise<SetupChec
           setupChecklistDoneAt: true,
         },
       }),
-      // "Prices reviewed" is answered from the audit trail, because comparing
-      // against the starter numbers would be guesswork — a company may
-      // legitimately charge exactly what the starter catalog suggests.
-      session.db.auditLog.count({
-        where: {
-          action: {
-            in: ['pricebook.item_updated', 'pricebook.item_created', 'pricebook.package_created'],
-          },
-        },
-      }),
+      session.db.auditLog.count({ where: { action: { in: PRICE_REVIEW_ACTIONS } } }),
       session.db.stockLevel.count({ where: { quantity: { gt: 0 } } }),
       session.db.customer.count({ where: { archivedAt: null } }),
       session.db.paymentAccount.findUnique({

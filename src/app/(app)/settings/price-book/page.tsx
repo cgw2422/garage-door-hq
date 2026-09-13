@@ -11,6 +11,7 @@ import {
   listPackages,
   packageTotalCents,
 } from '@/server/pricebook/service'
+import { hasSetOwnPrices } from '@/server/organizations/setup-checklist'
 import { PageBody, PageHeader } from '@/components/app/page-header'
 import { Alert } from '@/components/ui/alert'
 import { ButtonLink } from '@/components/ui/button'
@@ -42,9 +43,12 @@ export default async function PriceBookPage({
     : null
   const showArchived = params.archived === 'show'
 
-  const [items, packages] = await Promise.all([
+  const [items, packages, ownPrices] = await Promise.all([
     listItems(session, { search: params.q, category, includeArchived: showArchived }),
     tab === 'packages' ? listPackages(session) : Promise.resolve([]),
+    // The placeholder warning is true of a catalog nobody has touched, and
+    // wrong — insulting, even — on a company's own considered prices.
+    hasSetOwnPrices(session),
   ])
 
   const byCategory = new Map<PriceBookCategory, typeof items>()
@@ -77,11 +81,13 @@ export default async function PriceBookPage({
         }
       />
       <PageBody>
-        <Alert tone="info" title="Starter prices are examples, not recommendations">
-          Your account began with a garage-door catalog so estimates worked on day one. The
-          numbers are placeholders — they are not market rates and not advice. Set your own
-          before quoting real work.
-        </Alert>
+        {ownPrices ? null : (
+          <Alert tone="info" title="Starter prices are examples, not recommendations">
+            Your account began with a garage-door catalog so estimates worked on day one. The
+            numbers are placeholders — they are not market rates and not advice. Set your own
+            before quoting real work.
+          </Alert>
+        )}
 
         <PriceBookTabs value={tab} />
 

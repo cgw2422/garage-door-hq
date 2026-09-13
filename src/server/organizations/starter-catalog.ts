@@ -217,6 +217,23 @@ export const STARTER_PACKAGES: StarterPackage[] = [
   },
 ]
 
+/**
+ * A whole catalog: what one company sells, what it stocks, and how an
+ * inspection finding turns into a line on an estimate.
+ *
+ * Parameterised because not every company prices the same way. A new signup
+ * gets STARTER_CATALOG below — parts and hourly labor, the shape most shops
+ * recognise. The demo company prices flat rate, one number per job, which is
+ * a different catalog built from the same pieces.
+ */
+export interface Catalog {
+  springs: StarterSpring[]
+  /** Parts and services alike; a service is simply not stocked. */
+  parts: StarterPart[]
+  packages: StarterPackage[]
+  remedies: StarterRemedy[]
+}
+
 export interface StarterRemedy {
   componentKey: string
   name: string
@@ -264,3 +281,10 @@ export const STARTER_REMEDIES: StarterRemedy[] = [
   { componentKey: 'manual-release', name: 'General Repair Labor', sku: 'LBR-GENERAL', quantity: 1, sortOrder: 0 },
   { componentKey: 'auto-reverse', name: 'Safety Tune-Up', packageKey: 'tune-up', sortOrder: 0 },
 ]
+
+export const STARTER_CATALOG: Catalog = {
+  springs: STARTER_SPRINGS,
+  parts: [...STARTER_PARTS, ...STARTER_LABOR],
+  packages: STARTER_PACKAGES,
+  remedies: STARTER_REMEDIES,
+}

@@ -18,6 +18,8 @@ import { hashPassword } from '@/lib/password'
 import { zoneOffsetMinutes } from '@/server/jobs/queries'
 import { DEFAULT_PREFIX } from '@/lib/numbering'
 import { provisionOrganization } from '@/server/organizations/provision'
+import { recordAudit } from '@/lib/audit'
+import { DEMO_CATALOG, DEMO_PRICE, DEMO_SERVICES } from './catalog'
 import { RESIDENTIAL_INSPECTION } from '@/lib/inspection-template'
 
 /**
@@ -196,6 +198,7 @@ export async function seedDemoData(): Promise<DemoSummary> {
     name: 'Precision Garage Door Services — DEMO',
     slug: DEMO_SLUG,
     companySize: 'SMALL_2_5',
+    catalog: DEMO_CATALOG,
     phone: '(555) 214-7788',
     postalCode: '28206',
     timezone: TZ,
@@ -284,6 +287,20 @@ export async function seedDemoData(): Promise<DemoSummary> {
     },
   })
 
+  // These prices are the company's, not the starter catalog's suggestions, and
+  // the product decides that from the audit trail — so the trail has to say so.
+  // It also ticks "Set your own prices" on the setup checklist, which is true.
+  for (const service of DEMO_SERVICES) {
+    await recordAudit({
+      organizationId: orgId,
+      actorUserId: mike.id,
+      action: 'pricebook.item_created',
+      entityType: 'PriceBookItem',
+      entityId: service.sku,
+      after: { sku: service.sku, priceCents: service.priceCents, costCents: service.costCents },
+    })
+  }
+
   // --- Team and trucks -----------------------------------------------------
   const locations = await prisma.inventoryLocation.findMany({ where: { organizationId: orgId } })
   const warehouse = locations.find((location) => location.kind === 'WAREHOUSE')!
@@ -360,11 +377,8 @@ export async function seedDemoData(): Promise<DemoSummary> {
     ['BRG-CTR', 4, 'C3'],
     ['HNG-NO2', 16, 'D1'],
     ['HNG-NO3', 12, 'D1'],
-    ['OPN-BELT-STD', 2, 'E1'],
-    ['OPN-WALL-MNT', 2, 'E1'],
     ['RMT-STD', 11, 'E2'],
     ['KPD-STD', 5, 'E2'],
-    ['EYE-PAIR', 4, 'E3'],
     ['WLC-STD', 3, 'E3'],
     ['SEAL-BTM-16', 15, 'F1'],
     ['SEAL-JMB-KIT', 9, 'F1'],
@@ -389,7 +403,6 @@ export async function seedDemoData(): Promise<DemoSummary> {
     ['TS-2500-200-320-L', 11],
     ['TS-2500-200-320-R', 11],
     ['RLR-NYL-13', 180],
-    ['OPN-BELT-STD', 6],
     ['SEAL-BTM-16', 40],
   ] as Array<[string, number]>) {
     await receive(warehouse.id, sku, quantity, 'R2')
@@ -775,6 +788,28 @@ export async function seedDemoData(): Promise<DemoSummary> {
   // A company fourteen months in has estimates out. This one comes off the
   // inspection above: springs failed, rollers worn — which is exactly how the
   // product builds one, so the tiers and totals match what the app computes.
+  /**
+   * Document lines come from the menu rather than from numbers typed twice.
+   * A price change in catalog.ts moves the estimate and the invoices with it.
+   */
+  function price(sku: string) {
+    return DEMO_PRICE[sku]!.priceCents
+  }
+
+  function serviceLine(sku: string, sortOrder: number) {
+    const service = DEMO_PRICE[sku]!
+    return {
+      kind: 'LABOR' as const,
+      name: service.name,
+      sku,
+      quantity: 1,
+      unitPriceCents: service.priceCents,
+      unitCostCents: service.costCents,
+      taxable: false,
+      sortOrder,
+    }
+  }
+
   const springEstimate = await prisma.estimate.create({
     data: {
       organizationId: orgId,
@@ -783,65 +818,51 @@ export async function seedDemoData(): Promise<DemoSummary> {
       customerId: sarah.id,
       title: 'Broken Spring',
       status: 'SENT',
+      // Flat rate: the number quoted is the number paid. Nothing is added at
+      // the bottom of the page.
       taxRateBps: 0,
       sentAt: todayAt(10, 40),
       expiresAt: daysAgo(-30),
       customerMessage:
-        'Here are your options. The 25,000-cycle pair is what we put on most homes this size.',
+        'Here are your options. Doing both springs is what we put on most homes this size — ' +
+        'the second one is the same age as the one that broke.',
       termsText:
         'Prices valid for 30 days. Springs and hardware carry a 5-year parts warranty; labor is warranted for 12 months.',
       options: {
         create: [
           {
             tier: 'GOOD',
-            name: 'Standard Spring Replacement',
-            description: 'Matched pair of 10,000-cycle torsion springs and replacement labor.',
+            name: DEMO_PRICE['FR-SPRING-1']!.name,
+            description: 'Replace the broken spring, balance the door and test the safety reverse.',
             sortOrder: 0,
-            subtotalCents: 32700,
+            subtotalCents: price('FR-SPRING-1'),
             taxCents: 0,
-            totalCents: 32700,
-            items: {
-              create: [
-                { kind: 'PART', name: 'Torsion Spring .225 x 2" x 27" LH', sku: 'TS-2250-200-270-L', quantity: 1, unitPriceCents: 8900, unitCostCents: 2850, sortOrder: 0 },
-                { kind: 'PART', name: 'Torsion Spring .225 x 2" x 27" RH', sku: 'TS-2250-200-270-R', quantity: 1, unitPriceCents: 8900, unitCostCents: 2850, sortOrder: 1 },
-                { kind: 'LABOR', name: 'Spring Replacement Labor', sku: 'LBR-SPRING', quantity: 1, unitPriceCents: 14900, taxable: false, sortOrder: 2 },
-              ],
-            },
+            totalCents: price('FR-SPRING-1'),
+            items: { create: [serviceLine('FR-SPRING-1', 0)] },
           },
           {
             tier: 'BETTER',
-            name: '25,000-Cycle Spring Replacement',
-            description: 'High-cycle spring pair — roughly two and a half times the service life.',
+            name: DEMO_PRICE['FR-SPRING-2']!.name,
+            description:
+              'Replace both springs as a matched pair, so the second one does not fail in a few months.',
             isRecommended: true,
             sortOrder: 1,
-            subtotalCents: 42700,
+            subtotalCents: price('FR-SPRING-2'),
             taxCents: 0,
-            totalCents: 42700,
-            items: {
-              create: [
-                { kind: 'PART', name: 'Torsion Spring .225 x 2" x 27" LH · 25K', sku: 'TS-2250-200-270-L25', quantity: 1, unitPriceCents: 13900, unitCostCents: 4200, sortOrder: 0 },
-                { kind: 'PART', name: 'Torsion Spring .225 x 2" x 27" RH · 25K', sku: 'TS-2250-200-270-R25', quantity: 1, unitPriceCents: 13900, unitCostCents: 4200, sortOrder: 1 },
-                { kind: 'LABOR', name: 'Spring Replacement Labor', sku: 'LBR-SPRING', quantity: 1, unitPriceCents: 14900, taxable: false, sortOrder: 2 },
-              ],
-            },
+            totalCents: price('FR-SPRING-2'),
+            items: { create: [serviceLine('FR-SPRING-2', 0)] },
           },
           {
             tier: 'BEST',
-            name: 'High-Cycle Springs + Roller Upgrade',
+            name: 'Double Spring Change + Roller Swap & Tune-Up',
             description:
-              '25,000-cycle springs, ten 13-ball nylon rollers and a full safety tune-up with lubrication.',
+              'Both springs, new rollers and a full tune-up while the door is already apart.',
             sortOrder: 2,
-            subtotalCents: 63600,
+            subtotalCents: price('FR-SPRING-2') + price('FR-ROLLER-TUNE'),
             taxCents: 0,
-            totalCents: 63600,
+            totalCents: price('FR-SPRING-2') + price('FR-ROLLER-TUNE'),
             items: {
-              create: [
-                { kind: 'PART', name: 'Torsion Spring .225 x 2" x 27" LH · 25K', sku: 'TS-2250-200-270-L25', quantity: 1, unitPriceCents: 13900, unitCostCents: 4200, sortOrder: 0 },
-                { kind: 'PART', name: 'Torsion Spring .225 x 2" x 27" RH · 25K', sku: 'TS-2250-200-270-R25', quantity: 1, unitPriceCents: 13900, unitCostCents: 4200, sortOrder: 1 },
-                { kind: 'PART', name: '13-Ball Nylon Roller', sku: 'RLR-NYL-13', quantity: 10, unitPriceCents: 1200, unitCostCents: 320, sortOrder: 2 },
-                { kind: 'LABOR', name: 'Spring Replacement Labor', sku: 'LBR-SPRING', quantity: 1, unitPriceCents: 14900, taxable: false, sortOrder: 3 },
-                { kind: 'LABOR', name: 'Full Safety Tune-Up & Lubrication', sku: 'LBR-TUNEUP', quantity: 1, unitPriceCents: 8900, taxable: false, sortOrder: 4 },
-              ],
+              create: [serviceLine('FR-SPRING-2', 0), serviceLine('FR-ROLLER-TUNE', 1)],
             },
           },
         ],
@@ -861,19 +882,15 @@ export async function seedDemoData(): Promise<DemoSummary> {
       issuedAt: todayAt(9, 15),
       dueAt: todayAt(9, 15),
       paidAt: todayAt(9, 20),
-      taxRateBps: 725,
-      subtotalCents: 23200,
-      taxCents: 1700,
-      totalCents: 24900,
-      paidCents: 24900,
+      // One line, one number. The ten rollers that went into it come off the
+      // truck through the ledger below, not off the customer's invoice.
+      taxRateBps: 0,
+      subtotalCents: price('FR-ROLLER-TUNE'),
+      taxCents: 0,
+      totalCents: price('FR-ROLLER-TUNE'),
+      paidCents: price('FR-ROLLER-TUNE'),
       balanceCents: 0,
-      items: {
-        create: [
-          { kind: 'SERVICE_CALL', name: 'Service Call', sku: 'SVC-CALL', quantity: 1, unitPriceCents: 8900, taxable: false, sortOrder: 0 },
-          { kind: 'LABOR', name: 'Full Safety Tune-Up & Lubrication', sku: 'LBR-TUNEUP', quantity: 1, unitPriceCents: 8900, taxable: false, sortOrder: 1 },
-          { kind: 'PART', name: '13-Ball Nylon Roller', sku: 'RLR-NYL-13', quantity: 10, unitPriceCents: 1200, unitCostCents: 320, taxable: true, sortOrder: 2 },
-        ],
-      },
+      items: { create: [serviceLine('FR-ROLLER-TUNE', 0)] },
     },
   })
 
@@ -884,8 +901,8 @@ export async function seedDemoData(): Promise<DemoSummary> {
       customerId: david.id,
       method: 'CARD',
       status: 'SUCCEEDED',
-      amountCents: 24900,
-      feeCents: 750,
+      amountCents: price('FR-ROLLER-TUNE'),
+      feeCents: 404,
       receivedAt: todayAt(9, 20),
       memo: 'Card taken on the technician phone.',
       cardBrand: 'visa',
@@ -902,19 +919,20 @@ export async function seedDemoData(): Promise<DemoSummary> {
       status: 'SENT',
       issuedAt: todayAt(10, 15),
       dueAt: daysAgo(-30),
+      // Two doors at the flat rate, plus bearings that are not on the menu and
+      // are therefore sold as parts — which is why this one shows tax and the
+      // residential invoice above does not.
       taxRateBps: 725,
-      subtotalCents: 46400,
-      taxCents: 3400,
-      totalCents: 49800,
+      subtotalCents: 2 * price('FR-CABLES') + 4 * 2400,
+      taxCents: 696,
+      totalCents: 2 * price('FR-CABLES') + 4 * 2400 + 696,
       paidCents: 0,
-      balanceCents: 49800,
+      balanceCents: 2 * price('FR-CABLES') + 4 * 2400 + 696,
       notesToCustomer: 'Net 30 per the facilities agreement.',
       items: {
         create: [
-          { kind: 'SERVICE_CALL', name: 'Commercial Service Call', sku: 'SVC-CALL', quantity: 1, unitPriceCents: 8900, taxable: false, sortOrder: 0 },
-          { kind: 'PART', name: 'Lift Cable Set · 8 ft Door', sku: 'CBL-8FT-SET', quantity: 2, unitPriceCents: 3800, unitCostCents: 1050, taxable: true, sortOrder: 1 },
-          { kind: 'PART', name: 'End Bearing Plate 6252', sku: 'BRG-625', quantity: 4, unitPriceCents: 2400, unitCostCents: 650, taxable: true, sortOrder: 2 },
-          { kind: 'LABOR', name: 'Cable Repair Labor', sku: 'LBR-CABLE', quantity: 2, unitPriceCents: 9900, taxable: false, sortOrder: 3 },
+          { ...serviceLine('FR-CABLES', 0), quantity: 2 },
+          { kind: 'PART', name: 'End Bearing Plate 6252', sku: 'BRG-625', quantity: 4, unitPriceCents: 2400, unitCostCents: 650, taxable: true, sortOrder: 1 },
         ],
       },
     },

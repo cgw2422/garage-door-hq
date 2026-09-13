@@ -1,13 +1,6 @@
 import { Prisma, type CompanySize } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import {
-  STARTER_JOB_TYPES,
-  STARTER_LABOR,
-  STARTER_PACKAGES,
-  STARTER_PARTS,
-  STARTER_REMEDIES,
-  STARTER_SPRINGS,
-} from './starter-catalog'
+import { STARTER_CATALOG, STARTER_JOB_TYPES, type Catalog } from './starter-catalog'
 
 /**
  * Everything a brand-new garage door company needs to be useful on day one:
@@ -57,6 +50,8 @@ export interface ProvisionInput {
   referralCode?: string | null
   /** Skip the suggested catalog for a company importing their own. */
   includeStarterCatalog?: boolean
+  /** A different catalog entirely — the demo company prices flat rate. */
+  catalog?: Catalog
   now?: Date
 }
 
@@ -145,7 +140,7 @@ export async function provisionOrganization(input: ProvisionInput) {
       })
 
       if (input.includeStarterCatalog !== false) {
-        await seedStarterCatalog(tx, organization.id, defaultLocationId)
+        await seedStarterCatalog(tx, organization.id, defaultLocationId, input.catalog)
       }
 
       if (affiliate?.isActive) {
@@ -174,10 +169,11 @@ export async function seedStarterCatalog(
   tx: Prisma.TransactionClient,
   organizationId: string,
   stockLocationId: string | null,
+  catalog: Catalog = STARTER_CATALOG,
 ) {
   const idBySku = new Map<string, string>()
 
-  for (const spring of STARTER_SPRINGS) {
+  for (const spring of catalog.springs) {
     const item = await tx.priceBookItem.create({
       data: {
         organizationId,
@@ -217,7 +213,7 @@ export async function seedStarterCatalog(
     }
   }
 
-  for (const part of [...STARTER_PARTS, ...STARTER_LABOR]) {
+  for (const part of catalog.parts) {
     const item = await tx.priceBookItem.create({
       data: {
         organizationId,
@@ -247,7 +243,7 @@ export async function seedStarterCatalog(
   }
 
   const packageIdByKey = new Map<string, string>()
-  for (const pkg of STARTER_PACKAGES) {
+  for (const pkg of catalog.packages) {
     const created = await tx.priceBookPackage.create({
       data: {
         organizationId,
@@ -269,7 +265,7 @@ export async function seedStarterCatalog(
     packageIdByKey.set(pkg.key, created.id)
   }
 
-  for (const remedy of STARTER_REMEDIES) {
+  for (const remedy of catalog.remedies) {
     const packageId = remedy.packageKey ? packageIdByKey.get(remedy.packageKey) : undefined
     const priceBookItemId = remedy.sku ? idBySku.get(remedy.sku) : undefined
     if (!packageId && !priceBookItemId) continue
