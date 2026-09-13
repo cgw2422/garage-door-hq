@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { appBaseUrlUnchecked } from '@/lib/app-url'
 import { createLocalDriver } from './local'
 import { createR2Driver, readR2ConfigFromEnv } from './r2'
 import type { StorageDriver } from './types'
@@ -20,7 +21,7 @@ export function storage(): StorageDriver {
   const r2Config = readR2ConfigFromEnv()
 
   if (explicit === 'local') {
-    cached = createLocalDriver(appBaseUrl())
+    cached = createLocalDriver(appBaseUrlUnchecked())
   } else if (r2Config) {
     cached = createR2Driver(r2Config)
   } else {
@@ -30,7 +31,7 @@ export function storage(): StorageDriver {
           'Container filesystems are ephemeral — set R2_* before taking real photos.',
       )
     }
-    cached = createLocalDriver(appBaseUrl())
+    cached = createLocalDriver(appBaseUrlUnchecked())
   }
 
   return cached
@@ -43,14 +44,6 @@ export function resetStorage() {
 
 export function storageDriverName(): string {
   return storage().name
-}
-
-function appBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.AUTH_URL ??
-    'http://localhost:3000'
-  ).replace(/\/$/, '')
 }
 
 const EXTENSIONS: Record<string, string> = {

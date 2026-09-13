@@ -14,6 +14,8 @@
  * verification, which is Phase 1d work and noted as such.
  */
 
+import { appBaseUrl } from '@/lib/app-url'
+
 export interface SenderBranding {
   /** "ABC Garage Doors" — what the recipient sees in their inbox list. */
   companyName: string
@@ -37,7 +39,7 @@ export interface PlatformBranding {
 }
 
 export function platformBranding(): PlatformBranding {
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/+$/, '')
+  const appUrl = appBaseUrl()
   return {
     productName: process.env.NEXT_PUBLIC_APP_NAME || 'Garage Door HQ',
     fromEmail: process.env.EMAIL_FROM_ADDRESS || 'no-reply@garagedoorhq.test',

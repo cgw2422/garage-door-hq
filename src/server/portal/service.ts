@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { PortalLinkTarget } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { appBaseUrl } from '@/lib/app-url'
 import { recordAudit } from '@/lib/audit'
 import { tenantDb } from '@/lib/tenancy'
 import type { AppSession, TenantContext } from '@/lib/session'
@@ -38,12 +39,7 @@ function hashToken(token: string) {
 }
 
 export function portalUrlFor(target: PortalLinkTarget, token: string) {
-  const base = (
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.AUTH_URL ??
-    'http://localhost:3000'
-  ).replace(/\/$/, '')
-  return `${base}/p/${target === 'ESTIMATE' ? 'e' : 'i'}/${token}`
+  return `${appBaseUrl()}/p/${target === 'ESTIMATE' ? 'e' : 'i'}/${token}`
 }
 
 export interface IssuedLink {

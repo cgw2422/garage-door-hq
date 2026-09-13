@@ -16,6 +16,7 @@
  * person reading them.
  */
 const DOMAIN_ERRORS = new Set([
+  'AppUrlError',
   'BillingError',
   'BillingNotConfiguredError',
   'CompletionError',

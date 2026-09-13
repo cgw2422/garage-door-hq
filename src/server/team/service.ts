@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { OrgRole } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { appBaseUrl } from '@/lib/app-url'
 import { recordAudit } from '@/lib/audit'
 import { hashPassword } from '@/lib/password'
 import type { AppSession } from '@/lib/session'
@@ -136,12 +137,7 @@ export async function inviteMember(
 }
 
 export function acceptUrlFor(token: string) {
-  const base = (
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.AUTH_URL ??
-    'http://localhost:3000'
-  ).replace(/\/$/, '')
-  return `${base}/invite/${token}`
+  return `${appBaseUrl()}/invite/${token}`
 }
 
 /** Re-issues the token, which invalidates any link already handed out. */

@@ -7,6 +7,7 @@ import { affiliateSummaries } from '@/server/billing/commissions'
 import { Card, CardHeader, EmptyState, SectionHeading } from '@/components/ui/card'
 import { DataGrid, DataPoint } from '@/components/ui/stat'
 import { Chip } from '@/components/ui/status'
+import { appBaseUrlUnchecked } from '@/lib/app-url'
 
 export const metadata: Metadata = { title: 'Affiliates' }
 export const dynamic = 'force-dynamic'
@@ -89,7 +90,7 @@ export default async function AffiliatesPage() {
               <p className="mt-3 text-xs leading-relaxed text-ink-subtle">
                 Share{' '}
                 <span className="font-mono">
-                  {(process.env.NEXT_PUBLIC_APP_URL ?? '').replace(/\/+$/, '')}/?ref=
+                  {appBaseUrlUnchecked()}/?ref=
                   {affiliate.affiliateCode}
                 </span>
               </p>

@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { failure, parseForm, type FormState } from '@/lib/form'
+import { appBaseUrl } from '@/lib/app-url'
 import { clientAddress, enforceRateLimit } from '@/lib/rate-limit'
 import { resolvePortalToken } from '@/server/portal/service'
 import { selectEstimateOption, signEstimate } from '@/server/estimates/lifecycle'
@@ -150,5 +151,5 @@ export async function portalStartPaymentAction(
 }
 
 function appOrigin(): string {
-  return (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/+$/, '')
+  return appBaseUrl()
 }
