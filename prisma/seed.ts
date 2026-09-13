@@ -8,9 +8,10 @@
  *
  * Safe to re-run: the script resets the database first.
  */
-import { PrismaClient, Prisma } from '@prisma/client'
+import { PrismaClient, Prisma, type SequenceEntity } from '@prisma/client'
 import { hashPassword } from '../src/lib/password'
 import { zoneOffsetMinutes } from '../src/server/jobs/queries'
+import { DEFAULT_PREFIX } from '../src/lib/numbering'
 import { provisionOrganization } from '../src/server/organizations/provision'
 import { RESIDENTIAL_INSPECTION } from '../src/lib/inspection-template'
 
@@ -75,6 +76,41 @@ async function resetDatabase() {
   const list = tables.map((row) => `"public"."${row.tablename}"`).join(', ')
   console.log(`  resetting ${tables.length} tables`)
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${list} RESTART IDENTITY CASCADE`)
+}
+
+/**
+ * Give every seeded record the identifier its creation service would have.
+ *
+ * Uses the same prefixes as `nextIdentifier`, read from the organization's own
+ * sequences so a seed that sets a custom prefix stays consistent with it.
+ */
+async function stampDisplayNumbers(organizationId: string) {
+  const sequences = await prisma.numberSequence.findMany({ where: { organizationId } })
+  const prefixFor = (entity: SequenceEntity) =>
+    sequences.find((row) => row.entity === entity)?.prefix ?? DEFAULT_PREFIX[entity]
+
+  const models = [
+    ['customer', 'CUSTOMER'],
+    ['door', 'DOOR'],
+    ['job', 'JOB'],
+    ['estimate', 'ESTIMATE'],
+    ['invoice', 'INVOICE'],
+  ] as const
+
+  for (const [model, entity] of models) {
+    const rows = await (prisma[model] as { findMany: (args: object) => Promise<Array<{ id: string; number: number }>> })
+      .findMany({
+        where: { organizationId, displayNumber: null },
+        select: { id: true, number: true },
+      })
+
+    for (const row of rows) {
+      await (prisma[model] as { update: (args: object) => Promise<unknown> }).update({
+        where: { id: row.id },
+        data: { displayNumber: `${prefixFor(entity)}${row.number}` },
+      })
+    }
+  }
 }
 
 async function main() {
@@ -707,6 +743,86 @@ async function main() {
     },
   })
 
+  // --- The estimate the customer is looking at right now -------------------
+  //
+  // A company fourteen months in has estimates out. This one comes off the
+  // inspection above: springs failed, rollers worn — which is exactly how the
+  // product builds one, so the tiers and totals match what the app computes.
+  const springEstimate = await prisma.estimate.create({
+    data: {
+      organizationId: orgId,
+      number: 1022,
+      jobId: brokenSpringJob.id,
+      customerId: sarah.id,
+      title: 'Broken Spring',
+      status: 'SENT',
+      taxRateBps: 0,
+      sentAt: todayAt(10, 40),
+      expiresAt: daysAgo(-30),
+      customerMessage:
+        'Here are your options. The 25,000-cycle pair is what we put on most homes this size.',
+      termsText:
+        'Prices valid for 30 days. Springs and hardware carry a 5-year parts warranty; labor is warranted for 12 months.',
+      options: {
+        create: [
+          {
+            tier: 'GOOD',
+            name: 'Standard Spring Replacement',
+            description: 'Matched pair of 10,000-cycle torsion springs and replacement labor.',
+            sortOrder: 0,
+            subtotalCents: 32700,
+            taxCents: 0,
+            totalCents: 32700,
+            items: {
+              create: [
+                { kind: 'PART', name: 'Torsion Spring .225 x 2" x 27" LH', sku: 'TS-2250-200-270-L', quantity: 1, unitPriceCents: 8900, unitCostCents: 2850, sortOrder: 0 },
+                { kind: 'PART', name: 'Torsion Spring .225 x 2" x 27" RH', sku: 'TS-2250-200-270-R', quantity: 1, unitPriceCents: 8900, unitCostCents: 2850, sortOrder: 1 },
+                { kind: 'LABOR', name: 'Spring Replacement Labor', sku: 'LBR-SPRING', quantity: 1, unitPriceCents: 14900, taxable: false, sortOrder: 2 },
+              ],
+            },
+          },
+          {
+            tier: 'BETTER',
+            name: '25,000-Cycle Spring Replacement',
+            description: 'High-cycle spring pair — roughly two and a half times the service life.',
+            isRecommended: true,
+            sortOrder: 1,
+            subtotalCents: 42700,
+            taxCents: 0,
+            totalCents: 42700,
+            items: {
+              create: [
+                { kind: 'PART', name: 'Torsion Spring .225 x 2" x 27" LH · 25K', sku: 'TS-2250-200-270-L25', quantity: 1, unitPriceCents: 13900, unitCostCents: 4200, sortOrder: 0 },
+                { kind: 'PART', name: 'Torsion Spring .225 x 2" x 27" RH · 25K', sku: 'TS-2250-200-270-R25', quantity: 1, unitPriceCents: 13900, unitCostCents: 4200, sortOrder: 1 },
+                { kind: 'LABOR', name: 'Spring Replacement Labor', sku: 'LBR-SPRING', quantity: 1, unitPriceCents: 14900, taxable: false, sortOrder: 2 },
+              ],
+            },
+          },
+          {
+            tier: 'BEST',
+            name: 'High-Cycle Springs + Roller Upgrade',
+            description:
+              '25,000-cycle springs, ten 13-ball nylon rollers and a full safety tune-up with lubrication.',
+            sortOrder: 2,
+            subtotalCents: 63600,
+            taxCents: 0,
+            totalCents: 63600,
+            items: {
+              create: [
+                { kind: 'PART', name: 'Torsion Spring .225 x 2" x 27" LH · 25K', sku: 'TS-2250-200-270-L25', quantity: 1, unitPriceCents: 13900, unitCostCents: 4200, sortOrder: 0 },
+                { kind: 'PART', name: 'Torsion Spring .225 x 2" x 27" RH · 25K', sku: 'TS-2250-200-270-R25', quantity: 1, unitPriceCents: 13900, unitCostCents: 4200, sortOrder: 1 },
+                { kind: 'PART', name: '13-Ball Nylon Roller', sku: 'RLR-NYL-13', quantity: 10, unitPriceCents: 1200, unitCostCents: 320, sortOrder: 2 },
+                { kind: 'LABOR', name: 'Spring Replacement Labor', sku: 'LBR-SPRING', quantity: 1, unitPriceCents: 14900, taxable: false, sortOrder: 3 },
+                { kind: 'LABOR', name: 'Full Safety Tune-Up & Lubrication', sku: 'LBR-TUNEUP', quantity: 1, unitPriceCents: 8900, taxable: false, sortOrder: 4 },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  })
+  void springEstimate
+
   // --- Completed work: invoices, payments, parts and the ledger ------------
   const paidInvoice = await prisma.invoice.create({
     data: {
@@ -840,6 +956,13 @@ async function main() {
         'Customer mentioned the door has been getting slower for a few weeks. Original 10K springs are 2 years old — worth showing her the high-cycle option.',
     },
   })
+
+  // The seed writes rows directly rather than going through the creation
+  // services, so it has to hand out the identifiers a real signup would have
+  // produced. Without this the demo company holds records with no stored
+  // identifier — which is exactly the state display numbers exist to prevent,
+  // since a later prefix change would appear to renumber them.
+  await stampDisplayNumbers(orgId)
 
   const counts = {
     catalog: await prisma.priceBookItem.count({ where: { organizationId: orgId } }),
