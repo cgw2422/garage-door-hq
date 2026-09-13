@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "start": "next start -p ${PORT:-3000}",
+    "start": "prisma migrate deploy && next start -p ${PORT:-3000}",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
@@ -18,7 +18,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "storage:sweep": "tsx scripts/storage-sweep.ts",
     "db:studio": "prisma studio",
-    "test": "vitest run"
+    "test": "vitest run",
+    "start:local": "next start -p ${PORT:-3000}"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
