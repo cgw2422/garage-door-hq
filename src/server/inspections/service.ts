@@ -138,6 +138,15 @@ export interface RemedyOption {
   isPackage: boolean
   /** Empty means "offer this for any actionable finding". */
   forStatuses: InspectionItemStatus[]
+  /**
+   * The catalog lines this option would put on the estimate.
+   *
+   * The identity of a recommendation is what it sells, not where it was
+   * tapped: the same roller swap is offered under Rollers, under Lubrication
+   * and under Noise, and all three have to agree about whether it is already
+   * on the estimate. These ids are what they agree on.
+   */
+  targetItemIds: string[]
 }
 
 /**
@@ -162,6 +171,7 @@ export async function loadRemedies(
           items: {
             select: {
               quantity: true,
+              priceBookItemId: true,
               priceBookItem: { select: { priceCents: true } },
             },
           },
@@ -194,11 +204,64 @@ export async function loadRemedies(
       tier: remedy.package?.defaultTier ?? 'STANDARD',
       isPackage: Boolean(remedy.packageId),
       forStatuses: remedy.forStatuses,
+      targetItemIds: remedy.package
+        ? remedy.package.items.map((line) => line.priceBookItemId)
+        : remedy.priceBookItemId
+          ? [remedy.priceBookItemId]
+          : [],
     })
     byComponent.set(remedy.componentKey, bucket)
   }
 
   return byComponent
+}
+
+/**
+ * What is already on the job's draft estimate, as `TIER:priceBookItemId`.
+ *
+ * This is the whole of the "already added" state. There is no per-button
+ * memory anywhere: every recommendation that sells the same service reads
+ * this same set, so adding a roller swap under Rollers lights it up under
+ * Lubrication too, and removing it from the estimate turns both off. The
+ * estimate is the truth; the buttons are a view of it.
+ *
+ * Keyed by tier as well as by service because the tiers are alternatives the
+ * customer chooses between. A roller swap inside the BEST spring package is
+ * not the same offer as a roller swap on its own, and treating them as one
+ * would quietly drop a line from whichever the customer picked.
+ */
+export async function loadQuotedServices(
+  session: AppSession,
+  jobId: string,
+): Promise<string[]> {
+  const estimate = await session.db.estimate.findFirst({
+    where: { jobId, status: 'DRAFT' },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      options: {
+        select: { tier: true, items: { select: { priceBookItemId: true } } },
+      },
+    },
+  })
+  if (!estimate) return []
+
+  const keys = new Set<string>()
+  for (const option of estimate.options) {
+    for (const item of option.items) {
+      if (item.priceBookItemId) keys.add(quotedKey(option.tier, item.priceBookItemId))
+    }
+  }
+  return [...keys]
+}
+
+export function quotedKey(tier: string, priceBookItemId: string): string {
+  return `${tier}:${priceBookItemId}`
+}
+
+/** True when everything this recommendation sells is already on the estimate. */
+export function isRemedyQuoted(remedy: RemedyOption, quoted: ReadonlySet<string>): boolean {
+  if (remedy.targetItemIds.length === 0) return false
+  return remedy.targetItemIds.every((id) => quoted.has(quotedKey(remedy.tier, id)))
 }
 
 /**

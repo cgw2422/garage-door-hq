@@ -16,8 +16,15 @@ import {
 } from '@/server/estimates/builder'
 import { sendEstimate } from '@/server/estimates/lifecycle'
 
-function refresh(estimateId: string) {
+/**
+ * The estimate, and the inspection that recommended into it.
+ *
+ * Taking a line off here has to turn the "Added" state back off on every
+ * recommendation that sells it, and those live on the inspection screen.
+ */
+function refresh(estimateId: string, jobId?: string | null) {
   revalidatePath(`/estimates/${estimateId}`)
+  if (jobId) revalidatePath(`/jobs/${jobId}/inspection`)
 }
 
 const addPackageSchema = z.object({
@@ -69,16 +76,16 @@ export async function removeItemAction(input: { estimateId: string; itemId: stri
   const gate = await guarded(() => requireActiveSubscription('estimate:write'))
   if (!gate.ok) return gate.state
   const session = gate.value
-  await removeEstimateItem(session, input.itemId)
-  refresh(input.estimateId)
+  const { jobId } = await removeEstimateItem(session, input.itemId)
+  refresh(input.estimateId, jobId)
 }
 
 export async function removeOptionAction(input: { estimateId: string; optionId: string }) {
   const gate = await guarded(() => requireActiveSubscription('estimate:write'))
   if (!gate.ok) return gate.state
   const session = gate.value
-  await removeEstimateOption(session, input.optionId)
-  refresh(input.estimateId)
+  const { jobId } = await removeEstimateOption(session, input.optionId)
+  refresh(input.estimateId, jobId)
 }
 
 export async function setRecommendedAction(input: { estimateId: string; optionId: string }) {

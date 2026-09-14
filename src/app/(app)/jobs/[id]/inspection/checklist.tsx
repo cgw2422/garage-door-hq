@@ -12,7 +12,7 @@ import {
   isActionable,
   severityOf,
 } from '@/lib/inspection-template'
-import { remedyApplies, type RemedyOption } from '@/server/inspections/service'
+import { isRemedyQuoted, remedyApplies, type RemedyOption } from '@/server/inspections/service'
 import type { FormState } from '@/lib/form'
 import { Alert } from '@/components/ui/alert'
 import { Button, ButtonLink } from '@/components/ui/button'
@@ -24,7 +24,7 @@ import { SubmitButton } from '@/components/ui/submit-button'
 import { PageBody, StickyActions } from '@/components/app/page-header'
 import { PhotoCapture } from '@/components/app/photo-capture'
 import { Chip } from '@/components/ui/status'
-import { CameraIcon, PlusIcon } from '@/components/ui/icons'
+import { CameraIcon, CheckIcon, PlusIcon } from '@/components/ui/icons'
 import {
   addRemedyAction,
   addTieredOptionsAction,
@@ -96,6 +96,7 @@ export function InspectionChecklist({
   currency,
   items,
   remedies,
+  quotedServices,
   estimate,
 }: {
   jobId: string
@@ -103,6 +104,8 @@ export function InspectionChecklist({
   currency: string
   items: ChecklistItem[]
   remedies: Record<string, RemedyOption[]>
+  /** `TIER:priceBookItemId` for everything already on the draft estimate. */
+  quotedServices: string[]
   estimate: EstimateSummary | null
 }) {
   const [optimisticItems, applyStatus] = useOptimistic(
@@ -110,6 +113,14 @@ export function InspectionChecklist({
     (current, update: { id: string; status: InspectionItemStatus }) =>
       current.map((item) => (item.id === update.id ? { ...item, status: update.status } : item)),
   )
+  // The server is the source of truth for what is on the estimate; this only
+  // covers the second between the tap and the refresh, so the button does not
+  // sit there looking untouched while the request is in flight.
+  const [optimisticQuoted, markQuoted] = useOptimistic(
+    quotedServices,
+    (current, added: string[]) => [...new Set([...current, ...added])],
+  )
+  const quotedSet = useMemo(() => new Set(optimisticQuoted), [optimisticQuoted])
   const [, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [finishState, finishAction] = useActionState<FormState, FormData>(
@@ -143,11 +154,14 @@ export function InspectionChecklist({
     })
   }
 
-  async function addRemedy(item: ChecklistItem, remedy: RemedyOption) {
+  function addRemedy(item: ChecklistItem, remedy: RemedyOption) {
     setError(null)
-    const result = await addRemedyAction({ jobId, itemId: item.id, remedyId: remedy.id })
-    if (!result.ok) setError(result.error)
-    else router.refresh()
+    startTransition(async () => {
+      markQuoted(remedy.targetItemIds.map((id) => `${remedy.tier}:${id}`))
+      const result = await addRemedyAction({ jobId, itemId: item.id, remedyId: remedy.id })
+      if (!result.ok) setError(result.error)
+      else router.refresh()
+    })
   }
 
   async function addTiered(item: ChecklistItem) {
@@ -202,8 +216,9 @@ export function InspectionChecklist({
                     remedies={(remedies[item.componentKey] ?? []).filter((remedy) =>
                       remedyApplies(remedy.forStatuses, item.status),
                     )}
+                    quoted={quotedSet}
                     onStatus={(status) => setStatus(item, status)}
-                    onAddRemedy={(remedy) => void addRemedy(item, remedy)}
+                    onAddRemedy={(remedy) => addRemedy(item, remedy)}
                     onAddTiered={() => void addTiered(item)}
                   />
                 </div>
@@ -255,6 +270,7 @@ function ChecklistRow({
   jobId,
   currency,
   remedies,
+  quoted,
   onStatus,
   onAddRemedy,
   onAddTiered,
@@ -263,6 +279,7 @@ function ChecklistRow({
   jobId: string
   currency: string
   remedies: RemedyOption[]
+  quoted: ReadonlySet<string>
   onStatus: (status: InspectionItemStatus) => void
   onAddRemedy: (remedy: RemedyOption) => void
   onAddTiered: () => void
@@ -286,6 +303,14 @@ function ChecklistRow({
 
   const tiers = new Set(remedies.map((remedy) => remedy.tier))
   const hasFullSet = tiers.has('GOOD') && tiers.has('BETTER') && tiers.has('BEST')
+  // Once all three tiers are on the estimate there is nothing left for the
+  // one-tap button to do, and offering it again invites a second tap that
+  // looks like it failed.
+  const fullSetQuoted =
+    hasFullSet &&
+    remedies
+      .filter((remedy) => remedy.tier !== 'STANDARD')
+      .every((remedy) => isRemedyQuoted(remedy, quoted))
 
   return (
     <div className="px-4 py-3">
@@ -342,7 +367,7 @@ function ChecklistRow({
             Add to estimate
           </p>
 
-          {hasFullSet ? (
+          {hasFullSet && !fullSetQuoted ? (
             <Button
               type="button"
               size="sm"
@@ -355,20 +380,51 @@ function ChecklistRow({
           ) : null}
 
           <div className="flex flex-wrap gap-1.5">
-            {remedies.map((remedy) => (
-              <button
-                key={remedy.id}
-                type="button"
-                onClick={() => onAddRemedy(remedy)}
-                className="inline-flex items-center gap-1.5 rounded-[--radius-chip] border border-brand-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-brand-700 active:bg-brand-50"
-              >
-                <PlusIcon className="h-3.5 w-3.5" />
-                {remedy.name}
-                <span className="num text-ink-muted">
-                  {formatCents(remedy.priceCents, { currency, showCents: false })}
-                </span>
-              </button>
-            ))}
+            {remedies.map((remedy) => {
+              // Already on the estimate — established from the estimate
+              // itself, not from whether this particular button was the one
+              // that was tapped. The same service offered under three
+              // findings agrees with itself.
+              const added = isRemedyQuoted(remedy, quoted)
+              return (
+                <button
+                  key={remedy.id}
+                  type="button"
+                  // A word, not only a colour: a technician in bright sun
+                  // reading a phone at arm's length should not have to
+                  // distinguish two shades to know what happened.
+                  aria-pressed={added}
+                  disabled={added}
+                  aria-label={
+                    added
+                      ? `${remedy.name} is already on the estimate`
+                      : `Add ${remedy.name} to the estimate`
+                  }
+                  onClick={() => onAddRemedy(remedy)}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-[--radius-chip] border px-2.5 py-1.5 text-xs font-semibold',
+                    added
+                      ? 'border-success-500 bg-success-50 text-success-700'
+                      : 'border-brand-200 bg-white text-brand-700 active:bg-brand-50',
+                  )}
+                >
+                  {added ? (
+                    <>
+                      <CheckIcon className="h-3.5 w-3.5" />
+                      Added · {remedy.name}
+                    </>
+                  ) : (
+                    <>
+                      <PlusIcon className="h-3.5 w-3.5" />
+                      {remedy.name}
+                    </>
+                  )}
+                  <span className={cn('num', added ? 'text-success-700' : 'text-ink-muted')}>
+                    {formatCents(remedy.priceCents, { currency, showCents: false })}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         </div>
       ) : null}

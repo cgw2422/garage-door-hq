@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/session'
 import { RESIDENTIAL_INSPECTION } from '@/lib/inspection-template'
 import { formatJobNumber } from '@/lib/numbering'
 import { READY_PHOTOS } from '@/server/media/photos'
-import { loadRemedies, startInspection } from '@/server/inspections/service'
+import { loadQuotedServices, loadRemedies, startInspection } from '@/server/inspections/service'
 import { PageHeader } from '@/components/app/page-header'
 import { InspectionChecklist } from './checklist'
 
@@ -28,7 +28,7 @@ export default async function InspectionPage({ params }: { params: Promise<{ id:
   // "begin" tap standing between a technician and the checklist.
   await startInspection(session, job.id)
 
-  const [inspection, remedies, estimate] = await Promise.all([
+  const [inspection, remedies, quoted, estimate] = await Promise.all([
     session.db.inspection.findFirst({
       where: { jobId: job.id },
       orderBy: { createdAt: 'desc' },
@@ -40,6 +40,7 @@ export default async function InspectionPage({ params }: { params: Promise<{ id:
       },
     }),
     loadRemedies(session),
+    loadQuotedServices(session, job.id),
     session.db.estimate.findFirst({
       where: { jobId: job.id, status: 'DRAFT', archivedAt: null },
       orderBy: { createdAt: 'desc' },
@@ -77,6 +78,7 @@ export default async function InspectionPage({ params }: { params: Promise<{ id:
           updatedAt: item.updatedAt?.toISOString() ?? null,
         }))}
         remedies={Object.fromEntries(remedies)}
+        quotedServices={quoted}
         estimate={
           estimate
             ? {

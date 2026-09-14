@@ -142,10 +142,22 @@ export async function recalcEstimateTx(tx: Prisma.TransactionClient, estimateId:
   }
 }
 
+/**
+ * What to do when a line is already on this option.
+ *
+ * `increment` is right when someone deliberately adds ten more rollers.
+ * `skip` is right for a recommendation, because the same service is offered
+ * under several inspection items — a roller swap hangs off Rollers, off
+ * Lubrication and off Noise — and tapping it in two places means "put this on
+ * the estimate", not "charge for it twice".
+ */
+type DuplicatePolicy = 'increment' | 'skip'
+
 async function appendLinesTx(
   tx: Prisma.TransactionClient,
   optionId: string,
   lines: Array<{ priceBookItemId: string; quantity: number }>,
+  onDuplicate: DuplicatePolicy = 'increment',
 ) {
   const itemIds = lines.map((line) => line.priceBookItemId)
   const catalog = await tx.priceBookItem.findMany({ where: { id: { in: itemIds } } })
@@ -166,6 +178,10 @@ async function appendLinesTx(
     })
 
     if (duplicate) {
+      if (onDuplicate === 'skip') {
+        created.push(duplicate)
+        continue
+      }
       created.push(
         await tx.estimateItem.update({
           where: { id: duplicate.id },
@@ -247,7 +263,9 @@ export async function addRemedyToEstimate(
       isRecommended: remedy.package?.isRecommendedDefault ?? false,
     })
 
-    const created = await appendLinesTx(tx, option.id, lines)
+    // A recommendation offered under three different findings is still one
+    // service. Tapping it again must not move the total.
+    const created = await appendLinesTx(tx, option.id, lines, 'skip')
     await recalcOptionTx(tx, option.id, estimate.taxRateBps)
 
     if (params.inspectionItemId && created[0]) {
@@ -374,7 +392,7 @@ export async function removeEstimateItem(session: AppSession, itemId: string) {
   }
   assertEditable(item.option.estimate.status)
 
-  return prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx) => {
     await tx.inspectionItem.updateMany({
       where: { estimateItemId: itemId },
       data: { estimateItemId: null },
@@ -382,6 +400,10 @@ export async function removeEstimateItem(session: AppSession, itemId: string) {
     await tx.estimateItem.delete({ where: { id: itemId } })
     await recalcOptionTx(tx, item.optionId, item.option.estimate.taxRateBps)
   })
+
+  // The caller revalidates the inspection too: taking a service off here has
+  // to turn its "Added" buttons back on, wherever they are offered.
+  return { jobId: item.option.estimate.jobId }
 }
 
 export async function removeEstimateOption(session: AppSession, optionId: string) {
@@ -407,6 +429,8 @@ export async function removeEstimateOption(session: AppSession, optionId: string
     }
     await tx.estimateOption.delete({ where: { id: optionId } })
   })
+
+  return { jobId: option.estimate.jobId }
 }
 
 export async function setRecommendedOption(session: AppSession, optionId: string) {

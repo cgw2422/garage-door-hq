@@ -120,11 +120,18 @@ describe('inspection findings become estimate lines', () => {
     expect(best.totalCents).toBeGreaterThan(good.totalCents)
   })
 
-  it('merges a repeat add instead of listing the same part twice', async () => {
+  // Adding the same recommendation again means "put this on the estimate",
+  // which it already is — not "charge for it twice". The same service is
+  // offered under several findings, so a second tap is usually a second
+  // reason to do the work rather than a second quantity.
+  it('leaves the estimate alone when the same recommendation is added again', async () => {
     const rollers = await itemFor('rollers')
     const remedy = await remedyFor('rollers', 'Nylon Roller Upgrade')
     const before = await prisma.estimateItem.findFirstOrThrow({
       where: { option: { estimate: { jobId } }, sku: 'RLR-NYL-13' },
+    })
+    const optionBefore = await prisma.estimateOption.findUniqueOrThrow({
+      where: { id: before.optionId },
     })
 
     await addRemedyToEstimate(session, { jobId, inspectionItemId: rollers.id, remedyId: remedy.id })
@@ -133,9 +140,12 @@ describe('inspection findings become estimate lines', () => {
       where: { optionId: before.optionId, sku: 'RLR-NYL-13' },
     })
     expect(lines).toHaveLength(1)
-    expect(Number(lines[0]!.quantity.toString())).toBe(
-      Number(before.quantity.toString()) * 2,
-    )
+    expect(Number(lines[0]!.quantity.toString())).toBe(Number(before.quantity.toString()))
+
+    const optionAfter = await prisma.estimateOption.findUniqueOrThrow({
+      where: { id: before.optionId },
+    })
+    expect(optionAfter.totalCents).toBe(optionBefore.totalCents)
   })
 })
 
