@@ -13,10 +13,11 @@ import { userMessage } from '@/lib/errors'
  * `DEMO_SEED_TOKEN` unset, every request gets a flat 404 — no hint that the
  * route is there, nothing to probe.
  *
- * What that token can do is deliberately small. It adds one tenant and refuses
- * if that tenant is already present. It cannot delete, overwrite, read, or
- * touch any other company's data. The worst a leaked token achieves is a demo
- * company existing once.
+ * What that token can do is deliberately small. It adds one tenant, and with
+ * `?replace=1` it may delete that same tenant and rebuild it. It cannot read,
+ * overwrite or delete any other company's data: every statement behind the
+ * replace is scoped to the demo organization's own id. The worst a leaked
+ * token achieves is the demo company being rebuilt.
  *
  * POST rather than GET so a link preview, a crawler or a prefetch cannot fire
  * it. Remove the variable when you are done.
@@ -59,15 +60,27 @@ export async function POST(request: Request) {
     return new NextResponse('Not found', { status: 404 })
   }
 
+  // Replacing deletes the demo company first. Opt in per request, never a
+  // default, so a repeat POST cannot quietly discard what is there.
+  const replace = new URL(request.url).searchParams.get('replace') === '1'
+
   try {
-    const result = await installDemoData()
+    const result = await installDemoData({ replace })
     if (result.status === 'already-present') {
-      return NextResponse.json({ installed: false, message: result.message }, { status: 409 })
+      return NextResponse.json(
+        {
+          installed: false,
+          message: result.message,
+          hint: 'Add ?replace=1 to delete the demo company and load it fresh.',
+        },
+        { status: 409 },
+      )
     }
 
     const { summary } = result
     return NextResponse.json({
       installed: true,
+      replaced: result.replaced,
       organization: summary.organization,
       catalog: summary.catalog,
       packages: summary.packages,

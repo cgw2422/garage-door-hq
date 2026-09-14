@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { prisma } from '@/lib/db'
 import { DEMO_OWNER_EMAIL, DEMO_SLUG } from '@/server/demo/data'
-import { installDemoData } from '@/server/demo/install'
+import { installDemoData, removeDemoData } from '@/server/demo/install'
 import { createTestCompany } from './helpers'
 
 /**
@@ -95,5 +95,74 @@ describe('installing the demo company', () => {
     expect(await prisma.organization.count()).toBe(organizations)
     expect(await prisma.user.count()).toBe(users)
     expect(await prisma.customer.count()).toBe(customers)
+  })
+
+  // Reloading after a price change is the reason this exists, and it is the
+  // one destructive path in the product, so what it does not touch matters
+  // more than what it does.
+  it('replaces the demo company without touching a real one', async () => {
+    const { session } = await createTestCompany()
+    await session.db.customer.create({
+      data: {
+        organizationId: session.organizationId,
+        number: 99,
+        displayNumber: 'C-99',
+        firstName: 'Still',
+        lastName: 'Here',
+      },
+    })
+
+    const before = await prisma.organization.findUnique({ where: { slug: DEMO_SLUG } })
+    expect(before).not.toBeNull()
+
+    const result = await installDemoData({ replace: true })
+
+    expect(result.status).toBe('installed')
+    if (result.status === 'installed') expect(result.replaced).toBe(true)
+
+    // A new demo company, not the old one.
+    const after = await prisma.organization.findUnique({ where: { slug: DEMO_SLUG } })
+    expect(after).not.toBeNull()
+    expect(after!.id).not.toBe(before!.id)
+
+    // The real company and its data are exactly as they were.
+    const real = await prisma.organization.findUnique({ where: { id: session.organizationId } })
+    expect(real).not.toBeNull()
+    expect(
+      await prisma.customer.count({ where: { organizationId: session.organizationId } }),
+    ).toBe(1)
+
+    // Nothing points at the company that was removed.
+    for (const table of ['customer', 'job', 'invoice', 'estimate', 'priceBookItem'] as const) {
+      expect(
+        await (prisma[table] as { count: (args: unknown) => Promise<number> }).count({
+          where: { organizationId: before!.id },
+        }),
+        table,
+      ).toBe(0)
+    }
+  })
+
+  it('leaves nothing behind that would block a reinstall', async () => {
+    const { removed } = await removeDemoData()
+    expect(removed).toBe(true)
+
+    expect(await prisma.organization.findUnique({ where: { slug: DEMO_SLUG } })).toBeNull()
+    expect(await prisma.user.findUnique({ where: { email: DEMO_OWNER_EMAIL } })).toBeNull()
+    expect(await prisma.affiliate.findUnique({ where: { code: 'GDOC20' } })).toBeNull()
+
+    // Which is the point: the next install has a clean run at it.
+    const again = await installDemoData()
+    expect(again.status).toBe('installed')
+  })
+
+  it('does nothing when there is no demo company to remove', async () => {
+    await removeDemoData()
+    const organizations = await prisma.organization.count()
+
+    const { removed } = await removeDemoData()
+
+    expect(removed).toBe(false)
+    expect(await prisma.organization.count()).toBe(organizations)
   })
 })

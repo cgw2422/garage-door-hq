@@ -155,20 +155,39 @@ someone's business anywhere else. Two safe paths share the same data and none
 of that behaviour. Both refuse if the demo company is already there, and
 neither ever deletes anything.
 
-**Over HTTP**, which needs nothing installed:
+**From the deployment's own shell** (Railway → the service → Console), where
+`DATABASE_URL` is already set:
+
+```
+npm run db:demo            # load it
+npm run db:demo:replace    # delete the demo company and load it fresh
+```
+
+**Over HTTP**, which needs no shell at all:
 
 1. Set `DEMO_SEED_TOKEN` to a long random string (24 characters minimum —
    `openssl rand -base64 32`) and let it redeploy.
 2. `curl -X POST -H "x-seed-token: <the token>" https://<your-domain>/api/admin/seed-demo`
+   — add `?replace=1` to the URL to reload it from scratch.
 3. Unset `DEMO_SEED_TOKEN`.
 
 With the variable unset or too short the route answers 404 to everything, so
 it does not exist unless you decide it does. It is POST-only, so a link
 preview or a crawler cannot fire it, and rate limited either way.
 
-**From a terminal with the database reachable** (`railway run`, or `psql`
-access): `npm run db:demo`. It is idempotent, so it is safe to leave in a start
-command.
+### Reloading it
+
+Both paths refuse by default when the demo company is already there, and tell
+you how to replace it. Replacing is the one destructive operation in the
+product, and its blast radius is one tenant: it empties every table that
+carries an `organizationId`, scoped to the demo company's own id, then removes
+its two logins and the demo partner record. Real companies are untouched — the
+tests assert exactly that, including that no row is left pointing at the
+company that was removed.
+
+It is worth reloading after changing the flat-rate menu in
+`src/server/demo/catalog.ts`, since the demo's estimate and invoices are built
+from those prices.
 
 Sign in as `mike@precisiongaragedoor.test` with `DEMO_PASSWORD` (default
 `GarageDoorHQ2026!` — set `DEMO_PASSWORD` before loading on anything public).

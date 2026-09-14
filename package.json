@@ -20,7 +20,8 @@
     "db:studio": "prisma studio",
     "test": "vitest run",
     "start:local": "next start -p ${PORT:-3000}",
-    "db:demo": "tsx scripts/seed-demo.ts"
+    "db:demo": "tsx scripts/seed-demo.ts",
+    "db:demo:replace": "tsx scripts/seed-demo.ts --replace"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
