@@ -1,6 +1,13 @@
 'use client'
 
-import { useActionState, useMemo, useOptimistic, useState, useTransition } from 'react'
+import {
+  useActionState,
+  useEffect,
+  useMemo,
+  useOptimistic,
+  useState,
+  useTransition,
+} from 'react'
 import { useRouter } from 'next/navigation'
 import type { InspectionItemStatus, InspectionResponseType } from '@prisma/client'
 import { cn } from '@/lib/cn'
@@ -29,8 +36,10 @@ import {
   addRemedyAction,
   addTieredOptionsAction,
   finishInspectionAction,
+  removeRemedyAction,
   setNoteAction,
   setStatusAction,
+  type QuoteResult,
 } from './actions'
 
 export interface ChecklistItem {
@@ -113,12 +122,36 @@ export function InspectionChecklist({
     (current, update: { id: string; status: InspectionItemStatus }) =>
       current.map((item) => (item.id === update.id ? { ...item, status: update.status } : item)),
   )
-  // The server is the source of truth for what is on the estimate; this only
-  // covers the second between the tap and the refresh, so the button does not
+  /**
+   * The quote, as the screen currently understands it.
+   *
+   * Seeded from the server and then moved by what the add and remove actions
+   * answer with, so a tap changes the button, every other button selling the
+   * same service, and the running total together — without a refetch the
+   * technician has to wait through. The server stays the source of truth: each
+   * answer is the state it just wrote, not a guess made here.
+   */
+  const [quote, setQuote] = useState<{
+    quoted: string[]
+    estimate: EstimateSummary | null
+  }>({ quoted: quotedServices, estimate })
+
+  // A later server render (navigating back from the estimate, say) wins over
+  // anything held here.
+  const serverQuote = useMemo(
+    () => ({ quoted: quotedServices, estimate }),
+    [quotedServices, estimate],
+  )
+  useEffect(() => setQuote(serverQuote), [serverQuote])
+
+  // Covers the moment between the tap and the answer, so the button does not
   // sit there looking untouched while the request is in flight.
-  const [optimisticQuoted, markQuoted] = useOptimistic(
-    quotedServices,
-    (current, added: string[]) => [...new Set([...current, ...added])],
+  const [optimisticQuoted, nudgeQuoted] = useOptimistic(
+    quote.quoted,
+    (current, change: { keys: string[]; added: boolean }) =>
+      change.added
+        ? [...new Set([...current, ...change.keys])]
+        : current.filter((key) => !change.keys.includes(key)),
   )
   const quotedSet = useMemo(() => new Set(optimisticQuoted), [optimisticQuoted])
   const [, startTransition] = useTransition()
@@ -154,25 +187,52 @@ export function InspectionChecklist({
     })
   }
 
-  function addRemedy(item: ChecklistItem, remedy: RemedyOption) {
+  function applyQuote(result: QuoteResult) {
+    if (!result.ok) {
+      setError(result.error)
+      // Put the buttons back where the server says they are.
+      router.refresh()
+      return
+    }
+    setQuote({ quoted: result.quoted, estimate: result.estimate })
+    // The rest of the screen — the Quoted chips, the findings count — is still
+    // the server's to redraw, and does so quietly behind the state above.
+    router.refresh()
+  }
+
+  /**
+   * One button, both directions.
+   *
+   * Which way it goes is decided by the estimate, not by anything this button
+   * remembers: if the service is on the quote the tap takes it off, wherever
+   * in the checklist the tap happened.
+   */
+  function toggleRemedy(item: ChecklistItem, remedy: RemedyOption) {
     setError(null)
+    const keys = remedy.targetItemIds.map((id) => `${remedy.tier}:${id}`)
+    const added = isRemedyQuoted(remedy, quotedSet)
+
     startTransition(async () => {
-      markQuoted(remedy.targetItemIds.map((id) => `${remedy.tier}:${id}`))
-      const result = await addRemedyAction({ jobId, itemId: item.id, remedyId: remedy.id })
-      if (!result.ok) setError(result.error)
-      else router.refresh()
+      nudgeQuoted({ keys, added: !added })
+      applyQuote(
+        added
+          ? await removeRemedyAction({ jobId, remedyId: remedy.id })
+          : await addRemedyAction({ jobId, itemId: item.id, remedyId: remedy.id }),
+      )
     })
   }
 
-  async function addTiered(item: ChecklistItem) {
+  function addTiered(item: ChecklistItem) {
     setError(null)
-    const result = await addTieredOptionsAction({
-      jobId,
-      itemId: item.id,
-      componentKey: item.componentKey,
+    startTransition(async () => {
+      applyQuote(
+        await addTieredOptionsAction({
+          jobId,
+          itemId: item.id,
+          componentKey: item.componentKey,
+        }),
+      )
     })
-    if (!result.ok) setError(result.error)
-    else router.refresh()
   }
 
   return (
@@ -218,8 +278,8 @@ export function InspectionChecklist({
                     )}
                     quoted={quotedSet}
                     onStatus={(status) => setStatus(item, status)}
-                    onAddRemedy={(remedy) => addRemedy(item, remedy)}
-                    onAddTiered={() => void addTiered(item)}
+                    onToggleRemedy={(remedy) => toggleRemedy(item, remedy)}
+                    onAddTiered={() => addTiered(item)}
                   />
                 </div>
               ))}
@@ -246,9 +306,10 @@ export function InspectionChecklist({
       </PageBody>
 
       <StickyActions>
-        {estimate && estimate.lineCount > 0 ? (
-          <ButtonLink href={`/estimates/${estimate.id}`} size="lg" className="flex-1">
-            Review Estimate · {formatCents(estimate.totalCents, { currency, showCents: false })}
+        {quote.estimate && quote.estimate.lineCount > 0 ? (
+          <ButtonLink href={`/estimates/${quote.estimate.id}`} size="lg" className="flex-1">
+            Review Estimate ·{' '}
+            {formatCents(quote.estimate.totalCents, { currency, showCents: false })}
           </ButtonLink>
         ) : (
           <ButtonLink
@@ -272,7 +333,7 @@ function ChecklistRow({
   remedies,
   quoted,
   onStatus,
-  onAddRemedy,
+  onToggleRemedy,
   onAddTiered,
 }: {
   item: ChecklistItem
@@ -281,7 +342,7 @@ function ChecklistRow({
   remedies: RemedyOption[]
   quoted: ReadonlySet<string>
   onStatus: (status: InspectionItemStatus) => void
-  onAddRemedy: (remedy: RemedyOption) => void
+  onToggleRemedy: (remedy: RemedyOption) => void
   onAddTiered: () => void
 }) {
   const [showDetail, setShowDetail] = useState(false)
@@ -394,17 +455,16 @@ function ChecklistRow({
                   // reading a phone at arm's length should not have to
                   // distinguish two shades to know what happened.
                   aria-pressed={added}
-                  disabled={added}
                   aria-label={
                     added
-                      ? `${remedy.name} is already on the estimate`
+                      ? `Remove ${remedy.name} from the estimate`
                       : `Add ${remedy.name} to the estimate`
                   }
-                  onClick={() => onAddRemedy(remedy)}
+                  onClick={() => onToggleRemedy(remedy)}
                   className={cn(
                     'inline-flex items-center gap-1.5 rounded-[--radius-chip] border px-2.5 py-1.5 text-xs font-semibold',
                     added
-                      ? 'border-success-500 bg-success-50 text-success-700'
+                      ? 'border-success-500 bg-success-50 text-success-700 active:bg-success-100'
                       : 'border-brand-200 bg-white text-brand-700 active:bg-brand-50',
                   )}
                 >

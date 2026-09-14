@@ -2,13 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { prisma } from '@/lib/db'
 import {
   isRemedyQuoted,
+  loadQuoteState,
   loadQuotedServices,
   loadRemedies,
   quotedKey,
   startInspection,
   type RemedyOption,
 } from '@/server/inspections/service'
-import { addRemedyToEstimate, removeEstimateItem } from '@/server/estimates/builder'
+import {
+  addRemedyToEstimate,
+  removeEstimateItem,
+  removeRemedyFromEstimate,
+} from '@/server/estimates/builder'
 import type { AppSession } from '@/lib/session'
 import { createTestCompany, createTestDoor, createTestJob, skuId } from './helpers'
 
@@ -219,5 +224,110 @@ describe('a service offered under more than one finding', () => {
         new Set([quotedKey('STANDARD', roller), quotedKey('STANDARD', labor)]),
       ),
     ).toBe(true)
+  })
+
+  /**
+   * The whole toggle, in the order a technician meets it.
+   *
+   * Added under one finding, seen as added under another, taken off from that
+   * other one, and gone from everywhere — with the total moving up and back
+   * down by exactly the price of the service, never by a multiple of it.
+   */
+  it('adds under one finding and removes from another, and the total follows', async () => {
+    const { session, job, itemsByKey } = await setUp()
+    await offerSameServiceTwice(session, ['rollers', 'lubrication'])
+    const remedies = await loadRemedies(session)
+    const underRollers = remedyFor(remedies, 'rollers', 'Roller Swap + Tune-Up')
+    const underLubrication = remedyFor(remedies, 'lubrication', 'Roller Swap + Tune-Up')
+
+    const empty = await loadQuoteState(session, job.id)
+    expect(empty.estimate).toBeNull()
+
+    // 1. Added from Rollers.
+    await addRemedyToEstimate(session, {
+      jobId: job.id,
+      inspectionItemId: itemsByKey.get('rollers')!.id,
+      remedyId: underRollers.id,
+    })
+    const afterAdd = await loadQuoteState(session, job.id)
+    expect(afterAdd.estimate!.totalCents).toBe(underRollers.priceCents)
+
+    // 2. Already selected under Lubrication, without being tapped there.
+    const addedSet = new Set(afterAdd.quoted)
+    expect(isRemedyQuoted(underRollers, addedSet)).toBe(true)
+    expect(isRemedyQuoted(underLubrication, addedSet)).toBe(true)
+
+    // 3. Tapping it again under Lubrication takes it off the quote.
+    const removal = await removeRemedyFromEstimate(session, {
+      jobId: job.id,
+      remedyId: underLubrication.id,
+    })
+    expect(removal.removed).toBe(1)
+
+    // 4. Both buttons are back to unselected, and the total came back down.
+    const afterRemove = await loadQuoteState(session, job.id)
+    const removedSet = new Set(afterRemove.quoted)
+    expect(isRemedyQuoted(underRollers, removedSet)).toBe(false)
+    expect(isRemedyQuoted(underLubrication, removedSet)).toBe(false)
+    expect(afterRemove.estimate?.totalCents ?? 0).toBe(0)
+  })
+
+  it('takes the empty option away with the last line on it', async () => {
+    const { session, job, itemsByKey } = await setUp()
+    await offerSameServiceTwice(session, ['rollers'])
+    const remedy = remedyFor(await loadRemedies(session), 'rollers', 'Roller Swap + Tune-Up')
+
+    await addRemedyToEstimate(session, {
+      jobId: job.id,
+      inspectionItemId: itemsByKey.get('rollers')!.id,
+      remedyId: remedy.id,
+    })
+    expect((await loadQuoteState(session, job.id)).estimate!.optionCount).toBe(1)
+
+    await removeRemedyFromEstimate(session, { jobId: job.id, remedyId: remedy.id })
+
+    // An empty "Standard" heading on an estimate a customer is about to read
+    // is clutter that says nothing.
+    expect((await loadQuoteState(session, job.id)).estimate!.optionCount).toBe(0)
+  })
+
+  it('is harmless to remove something that is not on the quote', async () => {
+    const { session, job } = await setUp()
+    await offerSameServiceTwice(session, ['rollers'])
+    const remedy = remedyFor(await loadRemedies(session), 'rollers', 'Roller Swap + Tune-Up')
+
+    const result = await removeRemedyFromEstimate(session, { jobId: job.id, remedyId: remedy.id })
+
+    expect(result.removed).toBe(0)
+    expect((await loadQuoteState(session, job.id)).estimate).toBeNull()
+  })
+
+  // Removing one recommendation must not take a different service with it,
+  // even when both are on the same option.
+  it('removes only the service that was tapped', async () => {
+    const { session, job, itemsByKey } = await setUp()
+    await offerSameServiceTwice(session, ['rollers'])
+    const remedies = await loadRemedies(session)
+    const rollerSwap = remedyFor(remedies, 'rollers', 'Roller Swap + Tune-Up')
+    const seal = remedyFor(remedies, 'bottom-seal', 'Bottom Seal Replacement')
+
+    for (const [key, remedy] of [
+      ['rollers', rollerSwap],
+      ['bottom-seal', seal],
+    ] as const) {
+      await addRemedyToEstimate(session, {
+        jobId: job.id,
+        inspectionItemId: itemsByKey.get(key)!.id,
+        remedyId: remedy.id,
+      })
+    }
+
+    const both = await loadQuoteState(session, job.id)
+    await removeRemedyFromEstimate(session, { jobId: job.id, remedyId: rollerSwap.id })
+    const after = await loadQuoteState(session, job.id)
+
+    expect(isRemedyQuoted(rollerSwap, new Set(after.quoted))).toBe(false)
+    expect(isRemedyQuoted(seal, new Set(after.quoted))).toBe(true)
+    expect(after.estimate!.totalCents).toBe(both.estimate!.totalCents - rollerSwap.priceCents)
   })
 })

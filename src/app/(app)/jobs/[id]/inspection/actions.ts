@@ -8,11 +8,17 @@ import { requirePermission, requireActiveSubscription } from '@/lib/session'
 import { failure, type FormState, guarded } from '@/lib/form'
 import {
   completeInspection,
+  loadQuoteState,
   setItemNote,
   setItemStatus,
   startInspection,
+  type QuoteState,
 } from '@/server/inspections/service'
-import { addAllRemediesToEstimate, addRemedyToEstimate } from '@/server/estimates/builder'
+import {
+  addAllRemediesToEstimate,
+  addRemedyToEstimate,
+  removeRemedyFromEstimate,
+} from '@/server/estimates/builder'
 
 const statusSchema = z.object({
   itemId: z.string().uuid(),
@@ -78,10 +84,20 @@ const remedySchema = z.object({
   remedyId: z.string().uuid(),
 })
 
+/**
+ * What a recommendation button gets back.
+ *
+ * The whole quote state, not just an id, so the screen can redraw from the
+ * answer: the button, every other button selling the same service, and the
+ * running total, without waiting for a second round trip to tell it what
+ * changed.
+ */
+export type QuoteResult = ({ ok: true } & QuoteState) | { ok: false; error: string }
+
 /** One tap: the right work lands on the right tier of the job's estimate. */
 export async function addRemedyAction(
   input: z.infer<typeof remedySchema>,
-): Promise<{ ok: true; estimateId: string } | { ok: false; error: string }> {
+): Promise<QuoteResult> {
   const gate = await guarded(() => requireActiveSubscription('estimate:write'))
   // This action answers with its own shape, so the gate's message is carried
   // across rather than returned as a form state.
@@ -90,15 +106,48 @@ export async function addRemedyAction(
   const parsed = remedySchema.parse(input)
 
   try {
-    const result = await addRemedyToEstimate(session, {
+    await addRemedyToEstimate(session, {
       jobId: parsed.jobId,
       inspectionItemId: parsed.itemId,
       remedyId: parsed.remedyId,
     })
     revalidatePath(`/jobs/${parsed.jobId}/inspection`)
-    return { ok: true, estimateId: result.estimateId }
+    return { ok: true, ...(await loadQuoteState(session, parsed.jobId)) }
   } catch (error) {
     return { ok: false, error: failure(error).error ?? 'Could not add that option.' }
+  }
+}
+
+const removeRemedySchema = z.object({
+  jobId: z.string().uuid(),
+  remedyId: z.string().uuid(),
+})
+
+/**
+ * Tap it again to take it off.
+ *
+ * Deliberately keyed by the remedy rather than by the estimate line: the
+ * technician is removing "the roller swap", and which line that is, and which
+ * finding put it there, is the server's problem.
+ */
+export async function removeRemedyAction(
+  input: z.infer<typeof removeRemedySchema>,
+): Promise<QuoteResult> {
+  const gate = await guarded(() => requireActiveSubscription('estimate:write'))
+  if (!gate.ok) return { ok: false, error: gate.state.error ?? 'That is not available.' }
+  const session = gate.value
+  const parsed = removeRemedySchema.parse(input)
+
+  try {
+    const result = await removeRemedyFromEstimate(session, {
+      jobId: parsed.jobId,
+      remedyId: parsed.remedyId,
+    })
+    revalidatePath(`/jobs/${parsed.jobId}/inspection`)
+    if (result.estimateId) revalidatePath(`/estimates/${result.estimateId}`)
+    return { ok: true, ...(await loadQuoteState(session, parsed.jobId)) }
+  } catch (error) {
+    return { ok: false, error: failure(error).error ?? 'Could not remove that option.' }
   }
 }
 
@@ -111,7 +160,7 @@ const tieredSchema = z.object({
 /** Good, Better and Best on the estimate in a single tap. */
 export async function addTieredOptionsAction(
   input: z.infer<typeof tieredSchema>,
-): Promise<{ ok: true; estimateId: string } | { ok: false; error: string }> {
+): Promise<QuoteResult> {
   const gate = await guarded(() => requireActiveSubscription('estimate:write'))
   // This action answers with its own shape, so the gate's message is carried
   // across rather than returned as a form state.
@@ -120,13 +169,13 @@ export async function addTieredOptionsAction(
   const parsed = tieredSchema.parse(input)
 
   try {
-    const result = await addAllRemediesToEstimate(session, {
+    await addAllRemediesToEstimate(session, {
       jobId: parsed.jobId,
       inspectionItemId: parsed.itemId,
       componentKey: parsed.componentKey,
     })
     revalidatePath(`/jobs/${parsed.jobId}/inspection`)
-    return { ok: true, estimateId: result.estimateId }
+    return { ok: true, ...(await loadQuoteState(session, parsed.jobId)) }
   } catch (error) {
     return { ok: false, error: failure(error).error ?? 'Could not add those options.' }
   }

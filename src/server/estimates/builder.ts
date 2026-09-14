@@ -282,6 +282,81 @@ export async function addRemedyToEstimate(
 }
 
 /**
+ * Take a recommendation back off the estimate.
+ *
+ * The inverse of adding one, and keyed the same way: the lines the remedy
+ * sells, on the tier it sells them into. It does not matter which finding the
+ * technician tapped to add it or which one they tapped to take it off — the
+ * service is the identity, so removing it under Lubrication removes the same
+ * line that was added under Rollers.
+ *
+ * An option left with nothing in it goes too. An empty "Standard" heading on
+ * an estimate a customer is about to read is clutter that says nothing.
+ */
+export async function removeRemedyFromEstimate(
+  session: AppSession,
+  params: { jobId: string; remedyId: string },
+) {
+  const remedy = await session.db.inspectionRemedy.findUnique({
+    where: { id: params.remedyId },
+    include: { package: { include: { items: true } } },
+  })
+  if (!remedy) throw new EstimateError('That option is no longer available.')
+
+  const estimate = await session.db.estimate.findFirst({
+    where: { jobId: params.jobId, status: 'DRAFT', archivedAt: null },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, status: true, taxRateBps: true },
+  })
+  if (!estimate) return { estimateId: null, removed: 0 }
+  assertEditable(estimate.status)
+
+  const tier: EstimateTier = remedy.package?.defaultTier ?? 'STANDARD'
+  const targetItemIds = remedy.package
+    ? remedy.package.items.map((line) => line.priceBookItemId)
+    : remedy.priceBookItemId
+      ? [remedy.priceBookItemId]
+      : []
+  if (targetItemIds.length === 0) return { estimateId: estimate.id, removed: 0 }
+
+  const option = await prisma.estimateOption.findFirst({
+    where: { estimateId: estimate.id, tier },
+    select: { id: true },
+  })
+  if (!option) return { estimateId: estimate.id, removed: 0 }
+
+  const removed = await prisma.$transaction(async (tx) => {
+    const lines = await tx.estimateItem.findMany({
+      where: { optionId: option.id, priceBookItemId: { in: targetItemIds } },
+      select: { id: true },
+    })
+    if (lines.length === 0) return 0
+
+    const ids = lines.map((line) => line.id)
+    await tx.inspectionItem.updateMany({
+      where: { estimateItemId: { in: ids } },
+      data: { estimateItemId: null },
+    })
+    await tx.estimateItem.deleteMany({ where: { id: { in: ids } } })
+
+    const left = await tx.estimateItem.count({ where: { optionId: option.id } })
+    if (left === 0) {
+      await tx.estimate.updateMany({
+        where: { id: estimate.id, selectedOptionId: option.id },
+        data: { selectedOptionId: null },
+      })
+      await tx.estimateOption.delete({ where: { id: option.id } })
+    } else {
+      await recalcOptionTx(tx, option.id, estimate.taxRateBps)
+    }
+
+    return ids.length
+  })
+
+  return { estimateId: estimate.id, removed }
+}
+
+/**
  * Add every remedy for one finding at once, each landing in its own tier.
  *
  * This is what makes a broken spring a single tap: Good, Better and Best are

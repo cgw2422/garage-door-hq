@@ -234,28 +234,60 @@ export async function loadQuotedServices(
   session: AppSession,
   jobId: string,
 ): Promise<string[]> {
-  const estimate = await session.db.estimate.findFirst({
-    where: { jobId, status: 'DRAFT' },
-    orderBy: { createdAt: 'desc' },
-    select: {
-      options: {
-        select: { tier: true, items: { select: { priceBookItemId: true } } },
-      },
-    },
-  })
-  if (!estimate) return []
-
-  const keys = new Set<string>()
-  for (const option of estimate.options) {
-    for (const item of option.items) {
-      if (item.priceBookItemId) keys.add(quotedKey(option.tier, item.priceBookItemId))
-    }
-  }
-  return [...keys]
+  return (await loadQuoteState(session, jobId)).quoted
 }
 
 export function quotedKey(tier: string, priceBookItemId: string): string {
   return `${tier}:${priceBookItemId}`
+}
+
+export interface QuoteState {
+  /** `TIER:priceBookItemId` for everything on the draft estimate. */
+  quoted: string[]
+  estimate: { id: string; optionCount: number; lineCount: number; totalCents: number } | null
+}
+
+/**
+ * Everything the checklist needs to redraw itself after a change.
+ *
+ * Returned by the add and remove actions so the screen can update from the
+ * answer rather than from a round trip it has to wait for: a technician taps
+ * a recommendation and the button, the buttons for the same service under
+ * every other finding, and the running total all move at once.
+ */
+export async function loadQuoteState(session: AppSession, jobId: string): Promise<QuoteState> {
+  const estimate = await session.db.estimate.findFirst({
+    where: { jobId, status: 'DRAFT', archivedAt: null },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      options: {
+        select: {
+          tier: true,
+          totalCents: true,
+          items: { select: { priceBookItemId: true } },
+        },
+      },
+    },
+  })
+  if (!estimate) return { quoted: [], estimate: null }
+
+  const quoted = new Set<string>()
+  for (const option of estimate.options) {
+    for (const item of option.items) {
+      if (item.priceBookItemId) quoted.add(quotedKey(option.tier, item.priceBookItemId))
+    }
+  }
+
+  return {
+    quoted: [...quoted],
+    estimate: {
+      id: estimate.id,
+      optionCount: estimate.options.length,
+      lineCount: estimate.options.reduce((sum, option) => sum + option.items.length, 0),
+      totalCents: estimate.options.reduce((sum, option) => sum + option.totalCents, 0),
+    },
+  }
 }
 
 /** True when everything this recommendation sells is already on the estimate. */
