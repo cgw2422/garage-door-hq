@@ -13,6 +13,12 @@
  * nothing until the next build. Verified, not assumed: the value appears as a
  * literal in `.next/server`.
  *
+ * One deliberate escape hatch: running a production build on your own machine
+ * is a real thing to do — it is how the end-to-end walkthrough runs — and
+ * there a loopback address is not a mistake, it is the address. Setting
+ * `ALLOW_LOCAL_APP_URL` says so out loud. It is never right on a deployment,
+ * and nothing sets it implicitly.
+ *
  * `AUTH_URL` is accepted as a last fallback because it names the same origin, but
  * note that Auth.js treats `AUTH_URL` as authoritative for its own redirects:
  * a stale value there sends sign-in to the wrong host regardless of anything
@@ -30,6 +36,11 @@ export class AppUrlError extends Error {
     super(message)
     this.name = 'AppUrlError'
   }
+}
+
+/** Opting in to a loopback address on a production build, on purpose. */
+function localAllowed(): boolean {
+  return process.env.ALLOW_LOCAL_APP_URL === 'true'
 }
 
 function configured(): string {
@@ -66,7 +77,7 @@ export function appBaseUrl(): string {
     )
   }
 
-  if (isProduction && LOOPBACK.test(value)) {
+  if (isProduction && LOOPBACK.test(value) && !localAllowed()) {
     throw new AppUrlError(
       'This site is configured with a localhost web address, so any link sent ' +
         'would not open for your customers. Set NEXT_PUBLIC_APP_URL to the ' +

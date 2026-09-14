@@ -1,10 +1,25 @@
-import type { InspectionItemStatus } from '@prisma/client'
+import type { InspectionItemStatus, InspectionResponseType } from '@prisma/client'
 
+/**
+ * What a technician is actually being asked about.
+ *
+ * One universal Good/Worn/Needs Attention/Failed scale is wrong for most of a
+ * garage door inspection, and wrong in a way that shows: "Door Balance — Worn"
+ * and "Lubrication — Good" are not sentences anyone in this trade would say.
+ * A balance test passes or fails. Lubrication is done or it is not. Noise is
+ * normal or it is not. Only physical parts wear.
+ *
+ * So each component names the kind of answer it takes, and the checklist
+ * renders that answer set. Adding a type means adding a case here and nothing
+ * else: the severity mapping below keeps reporting and the estimate remedies
+ * working without either of them knowing the new words.
+ */
 export interface InspectionComponent {
   key: string
   label: string
   /** Grouping for the mobile checklist, so the list reads like the door. */
   group: 'Spring System' | 'Hardware' | 'Door' | 'Opener' | 'Safety'
+  responseType: InspectionResponseType
   hint?: string
 }
 
@@ -14,29 +29,29 @@ export interface InspectionComponent {
  * without a migration.
  */
 export const RESIDENTIAL_INSPECTION: InspectionComponent[] = [
-  { key: 'springs', label: 'Springs', group: 'Spring System', hint: 'Gaps, rust, cycle wear' },
-  { key: 'cables', label: 'Cables', group: 'Spring System', hint: 'Fraying, seating on drum' },
-  { key: 'drums', label: 'Drums', group: 'Spring System' },
-  { key: 'bearings', label: 'Bearings', group: 'Spring System' },
-  { key: 'shaft', label: 'Shaft', group: 'Spring System' },
-  { key: 'rollers', label: 'Rollers', group: 'Hardware' },
-  { key: 'hinges', label: 'Hinges', group: 'Hardware' },
-  { key: 'tracks', label: 'Tracks', group: 'Hardware' },
-  { key: 'brackets', label: 'Brackets', group: 'Hardware' },
-  { key: 'bottom-fixtures', label: 'Bottom Fixtures', group: 'Hardware' },
-  { key: 'lubrication', label: 'Lubrication', group: 'Hardware' },
-  { key: 'panels', label: 'Panels', group: 'Door' },
-  { key: 'bottom-seal', label: 'Bottom Seal', group: 'Door' },
-  { key: 'weather-stripping', label: 'Weather Stripping', group: 'Door' },
-  { key: 'door-balance', label: 'Door Balance', group: 'Door', hint: 'Disconnect and test at mid-travel' },
-  { key: 'noise-vibration', label: 'Noise / Vibration', group: 'Door' },
-  { key: 'opener', label: 'Opener', group: 'Opener' },
-  { key: 'wall-control', label: 'Wall Control', group: 'Opener' },
-  { key: 'remotes', label: 'Remote Controls', group: 'Opener' },
-  { key: 'keypad', label: 'Keypad', group: 'Opener' },
-  { key: 'photo-eyes', label: 'Photo Eyes / Safety Sensors', group: 'Safety' },
-  { key: 'auto-reverse', label: 'Auto-Reverse Test', group: 'Safety' },
-  { key: 'manual-release', label: 'Manual Release', group: 'Safety' },
+  { key: 'springs', label: 'Springs', group: 'Spring System', responseType: 'CONDITION', hint: 'Gaps, rust, cycle wear' },
+  { key: 'cables', label: 'Cables', group: 'Spring System', responseType: 'CONDITION', hint: 'Fraying, seating on drum' },
+  { key: 'drums', label: 'Drums', group: 'Spring System', responseType: 'CONDITION' },
+  { key: 'bearings', label: 'Bearings', group: 'Spring System', responseType: 'CONDITION' },
+  { key: 'shaft', label: 'Shaft', group: 'Spring System', responseType: 'CONDITION' },
+  { key: 'rollers', label: 'Rollers', group: 'Hardware', responseType: 'CONDITION' },
+  { key: 'hinges', label: 'Hinges', group: 'Hardware', responseType: 'CONDITION' },
+  { key: 'tracks', label: 'Tracks', group: 'Hardware', responseType: 'CONDITION' },
+  { key: 'brackets', label: 'Brackets', group: 'Hardware', responseType: 'CONDITION' },
+  { key: 'bottom-fixtures', label: 'Bottom Fixtures', group: 'Hardware', responseType: 'CONDITION' },
+  { key: 'lubrication', label: 'Lubrication', group: 'Hardware', responseType: 'MAINTENANCE' },
+  { key: 'panels', label: 'Panels', group: 'Door', responseType: 'CONDITION' },
+  { key: 'bottom-seal', label: 'Bottom Seal', group: 'Door', responseType: 'CONDITION' },
+  { key: 'weather-stripping', label: 'Weather Stripping', group: 'Door', responseType: 'CONDITION' },
+  { key: 'door-balance', label: 'Door Balance', group: 'Door', responseType: 'FUNCTION_TEST', hint: 'Disconnect and test at mid-travel' },
+  { key: 'noise-vibration', label: 'Noise / Vibration', group: 'Door', responseType: 'NOISE' },
+  { key: 'opener', label: 'Opener', group: 'Opener', responseType: 'FUNCTION_TEST' },
+  { key: 'wall-control', label: 'Wall Control', group: 'Opener', responseType: 'FUNCTION_TEST' },
+  { key: 'remotes', label: 'Remote Controls', group: 'Opener', responseType: 'FUNCTION_TEST' },
+  { key: 'keypad', label: 'Keypad', group: 'Opener', responseType: 'FUNCTION_TEST' },
+  { key: 'photo-eyes', label: 'Photo Eyes / Safety Sensors', group: 'Safety', responseType: 'FUNCTION_TEST' },
+  { key: 'auto-reverse', label: 'Auto-Reverse Test', group: 'Safety', responseType: 'FUNCTION_TEST' },
+  { key: 'manual-release', label: 'Manual Release', group: 'Safety', responseType: 'FUNCTION_TEST' },
 ]
 
 export const INSPECTION_TEMPLATES = {
@@ -48,25 +63,100 @@ export const INSPECTION_TEMPLATES = {
 
 export type InspectionTemplateKey = keyof typeof INSPECTION_TEMPLATES
 
-/** Statuses a technician can set, in the order they appear on the control. */
-export const SELECTABLE_STATUSES: InspectionItemStatus[] = [
-  'GOOD',
-  'WORN',
-  'NEEDS_ATTENTION',
-  'FAILED',
-  'NOT_APPLICABLE',
-]
+const BY_KEY = new Map(RESIDENTIAL_INSPECTION.map((component) => [component.key, component]))
 
-export const STATUS_LABELS: Record<InspectionItemStatus, string> = {
-  NOT_CHECKED: 'Not checked',
-  GOOD: 'Good',
-  WORN: 'Worn',
-  NEEDS_ATTENTION: 'Needs attention',
-  FAILED: 'Failed',
-  NOT_APPLICABLE: 'N/A',
+/** The answer set a component takes. Unknown keys fall back to condition. */
+export function responseTypeFor(componentKey: string): InspectionResponseType {
+  return BY_KEY.get(componentKey)?.responseType ?? 'CONDITION'
+}
+
+/**
+ * The choices each type offers, in the order they appear on the control —
+ * best on the left, worst before N/A, which is always last.
+ */
+export const RESPONSE_SETS: Record<InspectionResponseType, InspectionItemStatus[]> = {
+  CONDITION: ['GOOD', 'WORN', 'NEEDS_ATTENTION', 'FAILED', 'NOT_APPLICABLE'],
+  FUNCTION_TEST: ['PASS', 'NEEDS_ATTENTION', 'FAIL', 'NOT_APPLICABLE'],
+  MAINTENANCE: ['COMPLETE', 'NEEDED', 'NOT_APPLICABLE'],
+  NOISE: ['NORMAL', 'NOTICEABLE', 'EXCESSIVE', 'NOT_APPLICABLE'],
+}
+
+/**
+ * How bad each answer is, which is the only thing anything downstream needs.
+ *
+ * Reporting, the findings count and the estimate remedies all work from this,
+ * so a new answer set costs one line here and changes nothing else. These
+ * names are internal and never reach a screen: a technician sees "Pass", not
+ * "OK".
+ *
+ * Derived rather than stored, because a stored copy can disagree with the
+ * answer beside it and there is no way to tell which one is wrong.
+ */
+export type InspectionSeverity = 'NONE' | 'OK' | 'MONITOR' | 'ATTENTION' | 'CRITICAL'
+
+const SEVERITY: Record<InspectionItemStatus, InspectionSeverity> = {
+  NOT_CHECKED: 'NONE',
+  NOT_APPLICABLE: 'NONE',
+
+  GOOD: 'OK',
+  PASS: 'OK',
+  COMPLETE: 'OK',
+  NORMAL: 'OK',
+
+  WORN: 'MONITOR',
+  NOTICEABLE: 'MONITOR',
+
+  NEEDS_ATTENTION: 'ATTENTION',
+  NEEDED: 'ATTENTION',
+
+  FAILED: 'CRITICAL',
+  FAIL: 'CRITICAL',
+  EXCESSIVE: 'CRITICAL',
+}
+
+export function severityOf(status: InspectionItemStatus): InspectionSeverity {
+  return SEVERITY[status]
 }
 
 /** Findings worth offering to the customer as work. */
 export function isActionable(status: InspectionItemStatus): boolean {
-  return status === 'WORN' || status === 'NEEDS_ATTENTION' || status === 'FAILED'
+  const severity = severityOf(status)
+  return severity === 'MONITOR' || severity === 'ATTENTION' || severity === 'CRITICAL'
+}
+
+/** True when this answer belongs to this kind of question. */
+export function isValidResponse(
+  responseType: InspectionResponseType,
+  status: InspectionItemStatus,
+): boolean {
+  return status === 'NOT_CHECKED' || RESPONSE_SETS[responseType].includes(status)
+}
+
+/**
+ * Words for each answer.
+ *
+ * `compact` is what a narrow phone shows when four or five choices share the
+ * width. It exists for exactly one answer — "Needs Attention" does not fit a
+ * fifth of a 390px screen, and "Attn" reads like a form field, not like a
+ * technician. Everything else says the same thing at every width.
+ */
+export const STATUS_LABELS: Record<InspectionItemStatus, string> = {
+  NOT_CHECKED: 'Not checked',
+  GOOD: 'Good',
+  WORN: 'Worn',
+  NEEDS_ATTENTION: 'Needs Attention',
+  FAILED: 'Failed',
+  PASS: 'Pass',
+  FAIL: 'Fail',
+  COMPLETE: 'Complete',
+  NEEDED: 'Needed',
+  NORMAL: 'Normal',
+  NOTICEABLE: 'Noticeable',
+  EXCESSIVE: 'Excessive',
+  NOT_APPLICABLE: 'N/A',
+}
+
+export const STATUS_LABELS_COMPACT: Record<InspectionItemStatus, string> = {
+  ...STATUS_LABELS,
+  NEEDS_ATTENTION: 'Attention',
 }

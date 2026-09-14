@@ -12,7 +12,7 @@
  * `/api/admin/seed-demo` endpoint add the demo company to a live deployment
  * alongside whatever else is already there, and refuse if it is already loaded.
  */
-import { Prisma, type SequenceEntity } from '@prisma/client'
+import { Prisma, type InspectionItemStatus, type SequenceEntity } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { hashPassword } from '@/lib/password'
 import { zoneOffsetMinutes } from '@/server/jobs/queries'
@@ -20,7 +20,7 @@ import { DEFAULT_PREFIX } from '@/lib/numbering'
 import { provisionOrganization } from '@/server/organizations/provision'
 import { recordAudit } from '@/lib/audit'
 import { DEMO_CATALOG, DEMO_PRICE, DEMO_SERVICES } from './catalog'
-import { RESIDENTIAL_INSPECTION } from '@/lib/inspection-template'
+import { RESIDENTIAL_INSPECTION, isValidResponse } from '@/lib/inspection-template'
 
 /**
  * The application's own client, re-exported so the two standalone scripts can
@@ -747,16 +747,34 @@ export async function seedDemoData(): Promise<DemoSummary> {
   })
 
   // --- Inspection already under way on the broken spring job ---------------
-  const findings: Record<string, string> = {
+  //
+  // Each answer is in the words its own component uses: the springs are Failed,
+  // the balance test Passed, the lubrication is Needed. Checked below against
+  // the template, so a mismatch stops the seed rather than seeding a sentence
+  // no technician would say.
+  const findings: Record<string, InspectionItemStatus> = {
     springs: 'FAILED',
     cables: 'GOOD',
     rollers: 'WORN',
     drums: 'GOOD',
     bearings: 'GOOD',
     tracks: 'GOOD',
-    opener: 'GOOD',
     'bottom-seal': 'WORN',
-    'photo-eyes': 'GOOD',
+    lubrication: 'NEEDED',
+    'noise-vibration': 'NOTICEABLE',
+    'door-balance': 'PASS',
+    opener: 'PASS',
+    'photo-eyes': 'PASS',
+    'auto-reverse': 'PASS',
+    'manual-release': 'PASS',
+  }
+
+  for (const [key, status] of Object.entries(findings)) {
+    const component = RESIDENTIAL_INSPECTION.find((entry) => entry.key === key)
+    if (!component) throw new Error(`Unknown inspection component in seed: ${key}`)
+    if (!isValidResponse(component.responseType, status)) {
+      throw new Error(`"${status}" is not an answer ${component.label} takes.`)
+    }
   }
 
   await prisma.inspection.create({
@@ -770,8 +788,9 @@ export async function seedDemoData(): Promise<DemoSummary> {
         create: RESIDENTIAL_INSPECTION.map((component, index) => ({
           componentKey: component.key,
           label: component.label,
+          responseType: component.responseType,
           sortOrder: index,
-          status: (findings[component.key] ?? 'NOT_CHECKED') as never,
+          status: findings[component.key] ?? 'NOT_CHECKED',
           note:
             component.key === 'springs'
               ? 'Left-hand spring broken approximately 6" from the winding cone.'

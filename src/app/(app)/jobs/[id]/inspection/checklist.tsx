@@ -2,11 +2,17 @@
 
 import { useActionState, useMemo, useOptimistic, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import type { InspectionItemStatus } from '@prisma/client'
+import type { InspectionItemStatus, InspectionResponseType } from '@prisma/client'
 import { cn } from '@/lib/cn'
 import { formatCents } from '@/lib/money'
-import { isActionable } from '@/lib/inspection-template'
-import type { RemedyOption } from '@/server/inspections/service'
+import {
+  RESPONSE_SETS,
+  STATUS_LABELS,
+  STATUS_LABELS_COMPACT,
+  isActionable,
+  severityOf,
+} from '@/lib/inspection-template'
+import { remedyApplies, type RemedyOption } from '@/server/inspections/service'
 import type { FormState } from '@/lib/form'
 import { Alert } from '@/components/ui/alert'
 import { Button, ButtonLink } from '@/components/ui/button'
@@ -32,6 +38,7 @@ export interface ChecklistItem {
   componentKey: string
   label: string
   status: InspectionItemStatus
+  responseType: InspectionResponseType
   note: string | null
   quoted: boolean
   photoCount: number
@@ -49,21 +56,37 @@ interface EstimateSummary {
 }
 
 /**
- * Five states, short labels, one tap each. A technician walking a door should
- * be able to mark every component without reading anything twice.
+ * Colour by severity, so the whole checklist scans at arm's length: green is
+ * fine, amber wants watching, red is a finding, grey is neither. Worn and
+ * Needs Attention are both amber but not the same amber — one is an
+ * observation, the other is a recommendation.
  */
-const STATUS_BUTTONS: Array<{
-  value: InspectionItemStatus
-  short: string
-  full: string
-  tone: string
-}> = [
-  { value: 'GOOD', short: 'Good', full: 'Good', tone: 'data-[on=true]:bg-success-500' },
-  { value: 'WORN', short: 'Worn', full: 'Worn', tone: 'data-[on=true]:bg-warning-500' },
-  { value: 'NEEDS_ATTENTION', short: 'Attn', full: 'Needs attention', tone: 'data-[on=true]:bg-warning-600' },
-  { value: 'FAILED', short: 'Fail', full: 'Failed', tone: 'data-[on=true]:bg-danger-500' },
-  { value: 'NOT_APPLICABLE', short: 'N/A', full: 'Not applicable', tone: 'data-[on=true]:bg-navy-500' },
-]
+const SEVERITY_FILL: Record<string, string> = {
+  OK: 'data-[on=true]:bg-success-500',
+  MONITOR: 'data-[on=true]:bg-warning-500',
+  ATTENTION: 'data-[on=true]:bg-warning-600',
+  CRITICAL: 'data-[on=true]:bg-danger-500',
+  NONE: 'data-[on=true]:bg-navy-500',
+}
+
+/**
+ * How many choices share a row.
+ *
+ * Three or four answers get the full width between them rather than being
+ * squeezed into five columns for the sake of a grid that no longer applies.
+ *
+ * Five wrap to two rows instead of shrinking, because they do not fit: on a
+ * 390px phone a fifth of the row is 60px and "Attention" needs 69px, measured
+ * in the browser rather than guessed. Three columns gives every answer a
+ * 107px target — easier to hit with a glove on than five slivers, and the
+ * word stays a word. It is never abbreviated to "Attn", which reads like a
+ * form field rather than like a technician.
+ */
+const COLUMNS: Record<number, string> = {
+  3: 'grid-cols-3',
+  4: 'grid-cols-4',
+  5: 'grid-cols-3',
+}
 
 const GROUP_ORDER = ['Spring System', 'Hardware', 'Door', 'Opener', 'Safety']
 
@@ -176,10 +199,8 @@ export function InspectionChecklist({
                     item={item}
                     jobId={jobId}
                     currency={currency}
-                    remedies={(remedies[item.componentKey] ?? []).filter(
-                      (remedy) =>
-                        remedy.forStatuses.length === 0 ||
-                        remedy.forStatuses.includes(item.status),
+                    remedies={(remedies[item.componentKey] ?? []).filter((remedy) =>
+                      remedyApplies(remedy.forStatuses, item.status),
                     )}
                     onStatus={(status) => setStatus(item, status)}
                     onAddRemedy={(remedy) => void addRemedy(item, remedy)}
@@ -248,6 +269,7 @@ function ChecklistRow({
 }) {
   const [showDetail, setShowDetail] = useState(false)
   const actionable = isActionable(item.status)
+  const choices = RESPONSE_SETS[item.responseType]
 
   // Notes are the one thing on this screen that is expensive to lose: a
   // technician types what they are looking at, standing in a garage, often on
@@ -279,25 +301,36 @@ function ChecklistRow({
         ) : null}
       </div>
 
-      <div className="mt-2.5 grid grid-cols-5 gap-1.5">
-        {STATUS_BUTTONS.map((button) => {
-          const on = item.status === button.value
+      <div className={cn('mt-2.5 grid gap-1.5', COLUMNS[choices.length] ?? 'grid-cols-5')}>
+        {choices.map((choice) => {
+          const on = item.status === choice
+          const full = STATUS_LABELS[choice]
+          const compact = STATUS_LABELS_COMPACT[choice]
           return (
             <button
-              key={button.value}
+              key={choice}
               type="button"
               data-on={on}
               aria-pressed={on}
-              aria-label={`${item.label}: ${button.full}`}
-              onClick={() => onStatus(button.value)}
+              // The full wording is what a screen reader and a test both read,
+              // whatever the width chose to show.
+              aria-label={`${item.label}: ${full}`}
+              onClick={() => onStatus(choice)}
               className={cn(
-                'h-10 rounded-[--radius-control] border text-[0.8125rem] font-bold transition-colors',
+                'flex h-11 items-center justify-center rounded-[--radius-control] border px-1 text-center text-[0.8125rem] font-bold leading-tight transition-colors',
                 on
-                  ? cn('border-transparent text-white', button.tone)
+                  ? cn('border-transparent text-white', SEVERITY_FILL[severityOf(choice)])
                   : 'border-hairline-strong bg-surface text-ink-muted active:bg-surface-sunken',
               )}
             >
-              {button.short}
+              {compact === full ? (
+                full
+              ) : (
+                <>
+                  <span className="sm:hidden">{compact}</span>
+                  <span className="hidden sm:inline">{full}</span>
+                </>
+              )}
             </button>
           )
         })}

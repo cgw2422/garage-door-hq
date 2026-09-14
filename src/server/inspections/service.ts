@@ -1,7 +1,13 @@
 import type { InspectionItemStatus } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import type { AppSession } from '@/lib/session'
-import { RESIDENTIAL_INSPECTION, isActionable } from '@/lib/inspection-template'
+import {
+  RESIDENTIAL_INSPECTION,
+  STATUS_LABELS,
+  isActionable,
+  isValidResponse,
+  severityOf,
+} from '@/lib/inspection-template'
 
 export class InspectionError extends Error {
   constructor(message: string) {
@@ -40,6 +46,9 @@ export async function startInspection(session: AppSession, jobId: string) {
         create: RESIDENTIAL_INSPECTION.map((component, index) => ({
           componentKey: component.key,
           label: component.label,
+          // Copied, not looked up later: an inspection keeps asking the
+          // question it was started with even if the template changes.
+          responseType: component.responseType,
           sortOrder: index,
         })),
       },
@@ -64,6 +73,16 @@ export async function setItemStatus(
   params: { itemId: string; status: InspectionItemStatus },
 ) {
   const item = await loadOwnedItem(session, params.itemId)
+
+  // "Door Balance — Worn" is not a thing a technician would say, and now it is
+  // not a thing the database will hold either. The check is here rather than
+  // only in the UI because the UI is not the only caller.
+  if (!isValidResponse(item.responseType, params.status)) {
+    throw new InspectionError(
+      `"${STATUS_LABELS[params.status]}" is not one of the answers for ${item.label}.`,
+    )
+  }
+
   return prisma.inspectionItem.update({
     where: { id: item.id },
     data: { status: params.status },
@@ -182,6 +201,25 @@ export async function loadRemedies(
   return byComponent
 }
 
+/**
+ * Whether a remedy is offered for a finding.
+ *
+ * Matched on severity rather than on the exact word, so a remedy written for a
+ * FAILED spring is also offered for a photo eye that did not pass. Those are
+ * the same event to whoever decides what to quote, and requiring every remedy
+ * to list every synonym would mean a new answer type silently stops selling
+ * anything.
+ */
+export function remedyApplies(
+  forStatuses: InspectionItemStatus[],
+  status: InspectionItemStatus,
+): boolean {
+  if (!isActionable(status)) return false
+  if (forStatuses.length === 0) return true
+  const severity = severityOf(status)
+  return forStatuses.some((named) => severityOf(named) === severity)
+}
+
 /** Remedies apply when the finding matches, or when the remedy names no statuses. */
 export function remediesFor(
   all: Map<string, RemedyOption[]>,
@@ -190,9 +228,7 @@ export function remediesFor(
 ): RemedyOption[] {
   if (!isActionable(status)) return []
   const options = all.get(componentKey) ?? []
-  return options.filter(
-    (option) => option.forStatuses.length === 0 || option.forStatuses.includes(status),
-  )
+  return options.filter((option) => remedyApplies(option.forStatuses, status))
 }
 
 /** True when a finding has a full Good/Better/Best set ready to present. */

@@ -16,7 +16,23 @@ import { addAllRemediesToEstimate, addRemedyToEstimate } from '@/server/estimate
 
 const statusSchema = z.object({
   itemId: z.string().uuid(),
-  status: z.enum(['NOT_CHECKED', 'GOOD', 'WORN', 'NEEDS_ATTENTION', 'FAILED', 'NOT_APPLICABLE']),
+  // Every answer any response type can produce. Which of them this particular
+  // item actually accepts is the service's call, since only it knows the item.
+  status: z.enum([
+    'NOT_CHECKED',
+    'NOT_APPLICABLE',
+    'GOOD',
+    'WORN',
+    'NEEDS_ATTENTION',
+    'FAILED',
+    'PASS',
+    'FAIL',
+    'COMPLETE',
+    'NEEDED',
+    'NORMAL',
+    'NOTICEABLE',
+    'EXCESSIVE',
+  ]),
   jobId: z.string().uuid(),
 })
 

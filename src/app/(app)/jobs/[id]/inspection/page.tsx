@@ -68,6 +68,7 @@ export default async function InspectionPage({ params }: { params: Promise<{ id:
           componentKey: item.componentKey,
           label: item.label,
           status: item.status,
+          responseType: item.responseType,
           note: item.note,
           quoted: item.estimateItemId !== null,
           photoCount: item.photos.length,

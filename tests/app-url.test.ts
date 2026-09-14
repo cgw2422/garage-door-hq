@@ -11,7 +11,13 @@ import { userMessage } from '@/lib/errors'
  * than guess, and these tests pin that behaviour down.
  */
 
-const KEYS = ['APP_URL', 'NEXT_PUBLIC_APP_URL', 'AUTH_URL', 'NODE_ENV'] as const
+const KEYS = [
+  'APP_URL',
+  'NEXT_PUBLIC_APP_URL',
+  'AUTH_URL',
+  'NODE_ENV',
+  'ALLOW_LOCAL_APP_URL',
+] as const
 const original = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]))
 
 function setEnv(values: Partial<Record<(typeof KEYS)[number], string | undefined>>) {
@@ -89,6 +95,28 @@ describe('in production', () => {
   ])('refuses %s', (value) => {
     setEnv({ NODE_ENV: 'production', NEXT_PUBLIC_APP_URL: value })
     expect(() => appBaseUrl()).toThrow(AppUrlError)
+  })
+
+  // Running a production build on a laptop is a real thing to do — it is how
+  // the end-to-end walkthrough runs — and there loopback is the address.
+  it('accepts loopback when it has been told to, out loud', () => {
+    setEnv({
+      NODE_ENV: 'production',
+      NEXT_PUBLIC_APP_URL: 'http://127.0.0.1:3210',
+      ALLOW_LOCAL_APP_URL: 'true',
+    })
+    expect(appBaseUrl()).toBe('http://127.0.0.1:3210')
+  })
+
+  it('is not opted in by anything short of exactly "true"', () => {
+    for (const value of ['1', 'yes', 'TRUE', '']) {
+      setEnv({
+        NODE_ENV: 'production',
+        NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
+        ALLOW_LOCAL_APP_URL: value,
+      })
+      expect(() => appBaseUrl(), value).toThrow(AppUrlError)
+    }
   })
 
   it('does not mistake a real host that merely contains "localhost"', () => {

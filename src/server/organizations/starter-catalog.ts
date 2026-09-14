@@ -270,7 +270,7 @@ export const STARTER_REMEDIES: StarterRemedy[] = [
   { componentKey: 'wall-control', name: 'Replace Wall Control', sku: 'WLC-STD', quantity: 1, sortOrder: 0 },
   { componentKey: 'remotes', name: 'Add Remote Control', sku: 'RMT-STD', quantity: 1, sortOrder: 0 },
   { componentKey: 'keypad', name: 'Replace Keypad', sku: 'KPD-STD', quantity: 1, sortOrder: 0 },
-  { componentKey: 'opener', name: 'Replace Opener · Belt Drive', sku: 'OPN-BELT-STD', quantity: 1, sortOrder: 0, forStatuses: ['FAILED', 'NEEDS_ATTENTION'] },
+  { componentKey: 'opener', name: 'Replace Opener · Belt Drive', sku: 'OPN-BELT-STD', quantity: 1, sortOrder: 0, forStatuses: ['FAIL', 'NEEDS_ATTENTION'] },
   { componentKey: 'lubrication', name: 'Safety Tune-Up', packageKey: 'tune-up', sortOrder: 0 },
   { componentKey: 'door-balance', name: 'Safety Tune-Up', packageKey: 'tune-up', sortOrder: 0 },
   { componentKey: 'noise-vibration', name: 'Safety Tune-Up', packageKey: 'tune-up', sortOrder: 0 },

@@ -67,16 +67,16 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships    Membership[]
-  passwordResets PasswordResetToken[]
-  assignedJobs   Job[]                  @relation("JobAssignee")
-  auditLogs      AuditLog[]
-  inventoryMoves InventoryTransaction[] @relation("InventoryActor")
-  homeLocations  InventoryLocation[]    @relation("LocationAssignee")
-  notes          Note[]
-  affiliate      Affiliate?
-  communications CommunicationLog[]
-  sentInvitations Invitation[]      @relation("InvitationInviter")
+  memberships     Membership[]
+  passwordResets  PasswordResetToken[]
+  assignedJobs    Job[]                  @relation("JobAssignee")
+  auditLogs       AuditLog[]
+  inventoryMoves  InventoryTransaction[] @relation("InventoryActor")
+  homeLocations   InventoryLocation[]    @relation("LocationAssignee")
+  notes           Note[]
+  affiliate       Affiliate?
+  communications  CommunicationLog[]
+  sentInvitations Invitation[]           @relation("InvitationInviter")
 
   @@index([platformRole])
 }
@@ -98,7 +98,7 @@ model PasswordResetToken {
   /// Recorded for abuse investigation. Never shown to the requester, and never
   /// used to decide whether a reset is allowed.
   requestIp String?
-  createdAt DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -254,7 +254,7 @@ model Invitation {
 // ---------------------------------------------------------------------------
 
 model Customer {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   organizationId String
   number         Int
   /// The identifier as it was first shown, e.g. "INV-1008".
@@ -297,10 +297,10 @@ model Customer {
   reviewRequests ReviewRequest[]
 
   @@unique([organizationId, number])
+  @@unique([organizationId, displayNumber])
   @@index([organizationId, lastName])
   @@index([organizationId, phone])
   @@index([organizationId, archivedAt])
-  @@unique([organizationId, displayNumber])
 }
 
 enum PropertyKind {
@@ -369,7 +369,7 @@ enum DoorOperationType {
 /// Commercial buildings can carry dozens of these under one Property, which is
 /// why `positionLabel` (Bay 1, Receiving Door 3) exists alongside `nickname`.
 model Door {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   organizationId String
   propertyId     String
   /// Readable passport id: D-2043.
@@ -435,10 +435,10 @@ model Door {
   measurements  SpringMeasurement[]
 
   @@unique([organizationId, number])
+  @@unique([organizationId, displayNumber])
   @@index([organizationId, propertyId])
   @@index([organizationId, manufacturer])
   @@index([organizationId, serialNumber])
-  @@unique([organizationId, displayNumber])
 }
 
 enum DoorEventKind {
@@ -626,7 +626,7 @@ model JobType {
 }
 
 model Job {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   organizationId String
   /// Readable: Job #1043.
   number         Int
@@ -689,11 +689,11 @@ model Job {
   reviewRequests ReviewRequest[]
 
   @@unique([organizationId, number])
+  @@unique([organizationId, displayNumber])
   @@index([organizationId, status, scheduledStart])
   @@index([organizationId, assignedToId, scheduledStart])
   @@index([organizationId, customerId])
   @@index([organizationId, doorId])
-  @@unique([organizationId, displayNumber])
 }
 
 /// Parts actually consumed on a job. Separate from estimate/invoice lines
@@ -725,13 +725,41 @@ enum InspectionStatus {
   COMPLETED
 }
 
+/// What kind of answer a checklist item takes. A balance test passes or fails;
+/// only physical parts wear. See lib/inspection-template.ts.
+enum InspectionResponseType {
+  CONDITION
+  FUNCTION_TEST
+  MAINTENANCE
+  NOISE
+}
+
+/// Every answer any response type can produce. Which subset is offered is
+/// decided by the item's responseType, and the severity each one carries — the
+/// only thing reporting and the estimate remedies work from — is derived in
+/// lib/inspection-template.ts rather than stored, so the two cannot disagree.
 enum InspectionItemStatus {
   NOT_CHECKED
+  NOT_APPLICABLE
+
+  // CONDITION
   GOOD
   WORN
   NEEDS_ATTENTION
   FAILED
-  NOT_APPLICABLE
+
+  // FUNCTION_TEST — NEEDS_ATTENTION is shared with CONDITION.
+  PASS
+  FAIL
+
+  // MAINTENANCE
+  COMPLETE
+  NEEDED
+
+  // NOISE
+  NORMAL
+  NOTICEABLE
+  EXCESSIVE
 }
 
 model Inspection {
@@ -764,9 +792,12 @@ model InspectionItem {
   /// string so templates can evolve without a migration per component.
   componentKey   String
   label          String
-  status         InspectionItemStatus @default(NOT_CHECKED)
+  /// Copied from the template when the item is created, so an inspection keeps
+  /// answering the question it was started with even if the template changes.
+  responseType   InspectionResponseType @default(CONDITION)
+  status         InspectionItemStatus   @default(NOT_CHECKED)
   note           String?
-  sortOrder      Int                  @default(0)
+  sortOrder      Int                    @default(0)
   /// Set when the technician pushed this finding onto an estimate.
   estimateItemId String?
 
@@ -1034,7 +1065,7 @@ enum EstimateTier {
 }
 
 model Estimate {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   organizationId String
   number         Int
   /// The identifier as it was first shown, e.g. "INV-1008".
@@ -1083,10 +1114,10 @@ model Estimate {
   portalLinks    PortalLink[]
 
   @@unique([organizationId, number])
+  @@unique([organizationId, displayNumber])
   @@index([organizationId, status])
   @@index([organizationId, customerId])
   @@index([organizationId, jobId])
-  @@unique([organizationId, displayNumber])
 }
 
 model EstimateOption {
@@ -1185,7 +1216,7 @@ enum InvoiceStatus {
 }
 
 model Invoice {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   organizationId String
   number         Int
   /// The identifier as it was first shown, e.g. "INV-1008".
@@ -1236,9 +1267,9 @@ model Invoice {
   portalLinks  PortalLink[]
 
   @@unique([organizationId, number])
+  @@unique([organizationId, displayNumber])
   @@index([organizationId, status, dueAt])
   @@index([organizationId, customerId])
-  @@unique([organizationId, displayNumber])
 }
 
 model InvoiceItem {
@@ -1587,10 +1618,10 @@ model CommunicationLog {
   errorMessage      String?
 
   /// Attempts made so far, so a retry is visible rather than implied.
-  attemptCount   Int       @default(0)
-  lastAttemptAt  DateTime?
-  deliveredAt    DateTime?
-  failedAt       DateTime?
+  attemptCount  Int       @default(0)
+  lastAttemptAt DateTime?
+  deliveredAt   DateTime?
+  failedAt      DateTime?
 
   /// Set by the caller so a retried send reuses its row and a duplicate send
   /// is refused by the database rather than by a check that can race.
@@ -1665,6 +1696,10 @@ model InspectionRemedy {
   quantity        Decimal @default(1) @db.Decimal(10, 3)
 
   /// Which findings this remedy is offered for. Empty means any actionable one.
+  ///
+  /// Matched by severity, not by the exact word: a remedy listing FAILED is
+  /// offered for a failed spring and for a photo eye that did not pass, which
+  /// are the same thing to the person deciding what to quote.
   forStatuses InspectionItemStatus[] @default([])
   sortOrder   Int                    @default(0)
   isActive    Boolean                @default(true)
@@ -1693,7 +1728,7 @@ model ReviewRequest {
   clickedAt    DateTime?
   failedAt     DateTime?
   errorMessage String?
-  attemptCount Int       @default(0)
+  attemptCount Int                 @default(0)
 
   createdAt DateTime @default(now())
 
@@ -1785,7 +1820,7 @@ model Subscription {
   cardLast4              String?
 
   /// When the paid subscription first became active, for MRR reporting.
-  startedAt   DateTime?
+  startedAt    DateTime?
   /// When Stripe first reported a failed payment. Cleared on recovery.
   pastDueSince DateTime?
 
@@ -1916,10 +1951,10 @@ model PaymentAccount {
   id             String @id @default(uuid())
   organizationId String @unique
 
-  provider          String  @default("stripe")
-  providerAccountId String  @unique
+  provider          String @default("stripe")
+  providerAccountId String @unique
   /// "standard" or "express"; Standard at launch.
-  accountType       String  @default("standard")
+  accountType       String @default("standard")
 
   /// Reported by the provider, never assumed. The Pay Invoice button appears
   /// only while `chargesEnabled` is true.
@@ -1929,15 +1964,15 @@ model PaymentAccount {
   /// What the provider says is still outstanding, shown to the owner verbatim.
   requirementsNote String?
 
-  country         String  @default("US")
-  defaultCurrency String  @default("USD")
+  country           String @default("US")
+  defaultCurrency   String @default("USD")
   /// Platform fee in basis points. Zero at launch and deliberately so; see
   /// docs/PAYMENT-MODEL.md.
-  applicationFeeBps Int   @default(0)
+  applicationFeeBps Int    @default(0)
 
-  connectedAt  DateTime?
+  connectedAt    DateTime?
   disconnectedAt DateTime?
-  lastSyncedAt DateTime?
+  lastSyncedAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

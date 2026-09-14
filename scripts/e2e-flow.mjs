@@ -27,6 +27,15 @@
  *   test card, so it is skipped here and covered by tests/customer-payments.ts
  *   (15 tests) and tests/webhooks.ts (17 tests) instead. The script says so
  *   rather than pretending.
+ *
+ * Run it against a production build on this machine:
+ *
+ *   ALLOW_LOCAL_APP_URL=true npx next start -p 3210
+ *   node scripts/e2e-flow.mjs http://127.0.0.1:3210
+ *
+ * That variable is needed because the app refuses to build a customer-facing
+ * link from a localhost address in production — correct on a deployment, and
+ * exactly wrong here, where localhost is the address.
  */
 import { chromium } from 'playwright'
 import { PrismaClient } from '@prisma/client'
@@ -519,6 +528,35 @@ const run = async () => {
     await page.click('button:has-text("Nylon Roller Upgrade")')
     await page.waitForTimeout(1000)
     log('One tap put Good / Better / Best on the estimate, plus the roller upgrade')
+
+    // Each component offers the answers its own question takes. A balance test
+    // passes or fails; lubrication is done or it is not; only parts wear.
+    const answers = await page.evaluate(() => {
+      const wanted = ['Door Balance', 'Lubrication', 'Noise / Vibration', 'Springs']
+      const out = {}
+      for (const button of document.querySelectorAll('button[aria-label]')) {
+        const [component, answer] = button.getAttribute('aria-label').split(': ')
+        if (!wanted.includes(component)) continue
+        ;(out[component] ??= []).push(answer)
+      }
+      return out
+    })
+    for (const [component, expected] of [
+      ['Door Balance', 'Pass/Needs Attention/Fail/N/A'],
+      ['Lubrication', 'Complete/Needed/N/A'],
+      ['Noise / Vibration', 'Normal/Noticeable/Excessive/N/A'],
+      ['Springs', 'Good/Worn/Needs Attention/Failed/N/A'],
+    ]) {
+      const offered = answers[component]?.join('/')
+      if (offered !== expected) fail(`${component} offered ${offered}, expected ${expected}`)
+    }
+    if (answers['Door Balance']?.includes('Worn')) fail('A balance test should never be describable as Worn')
+    log('Each item offers its own answers — no Worn balance test, no Good lubrication')
+
+    // And a failed function test sells the repair, exactly like a failed part.
+    await page.click('button[aria-label="Photo Eyes / Safety Sensors: Fail"]')
+    await page.waitForSelector('button:has-text("Safety Sensor")', { timeout: 20_000 })
+    log('A photo eye that did not pass offered the sensor replacement')
     await shot(page, '10-inspection-quoted')
 
     // --- 12. The estimate ----------------------------------------------------

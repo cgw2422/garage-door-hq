@@ -1,6 +1,11 @@
 import type { ReactNode } from 'react'
 import type { InspectionItemStatus, InvoiceStatus, JobStatus } from '@prisma/client'
 import { cn } from '@/lib/cn'
+import {
+  STATUS_LABELS,
+  severityOf,
+  type InspectionSeverity,
+} from '@/lib/inspection-template'
 
 /**
  * Status colour is semantic and consistent across the whole product:
@@ -85,22 +90,32 @@ export function InvoiceStatusChip({ status }: { status: InvoiceStatus }) {
   return <Chip tone={meta.tone}>{meta.label}</Chip>
 }
 
-export const INSPECTION_STATUS_META: Record<
-  InspectionItemStatus,
-  { label: string; tone: Tone }
-> = {
-  NOT_CHECKED: { label: 'Not checked', tone: 'neutral' },
-  GOOD: { label: 'Good', tone: 'success' },
-  WORN: { label: 'Worn', tone: 'warning' },
-  NEEDS_ATTENTION: { label: 'Needs attention', tone: 'warning' },
-  FAILED: { label: 'Failed', tone: 'danger' },
-  NOT_APPLICABLE: { label: 'N/A', tone: 'neutral' },
+/**
+ * An inspection answer's colour comes from its severity, not from its word.
+ *
+ * Green for healthy, amber for watch-it, red for failed, grey for neither —
+ * so Good and Pass look alike at a glance, which is the point of scanning a
+ * finished inspection. A new answer type inherits the right colour for free.
+ */
+export const SEVERITY_TONE: Record<InspectionSeverity, Tone> = {
+  NONE: 'neutral',
+  OK: 'success',
+  MONITOR: 'warning',
+  ATTENTION: 'warning',
+  CRITICAL: 'danger',
+}
+
+export function inspectionStatusMeta(status: InspectionItemStatus): {
+  label: string
+  tone: Tone
+} {
+  return { label: STATUS_LABELS[status], tone: SEVERITY_TONE[severityOf(status)] }
 }
 
 export function InspectionStatusChip({ status }: { status: InspectionItemStatus }) {
-  const meta = INSPECTION_STATUS_META[status]
+  const meta = inspectionStatusMeta(status)
   return (
-    <Chip tone={meta.tone} dot={status !== 'NOT_CHECKED' && status !== 'NOT_APPLICABLE'}>
+    <Chip tone={meta.tone} dot={severityOf(status) !== 'NONE'}>
       {meta.label}
     </Chip>
   )
