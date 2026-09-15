@@ -1,0 +1,168 @@
+name: Promote to production
+
+# The only way code reaches real garage door companies.
+#
+# Nothing here builds anything new. It takes a commit that has already been
+# built, tested and run on staging, and moves the `production` branch to it —
+# which is the branch the production Railway service deploys from. Ordinary
+# development pushes never touch that branch, so a normal day's work cannot
+# change what customers are using.
+#
+# Run it from the Actions tab: "Promote to production" → Run workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'Commit SHA that you tested on staging (full or short)'
+        required: true
+        type: string
+      confirm:
+        description: 'Type PROMOTE to confirm you tested this on staging'
+        required: true
+        type: string
+      allow_destructive_migration:
+        description: 'Only if the migration report flagged a destructive change AND you have a fresh backup'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  # One promotion at a time, and never cancelled halfway.
+  group: production-promotion
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Check, tag and promote
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      # Add required reviewers to this environment in repository settings to
+      # make promotion need a second pair of eyes.
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+
+    steps:
+      - name: Refuse an unconfirmed promotion
+        if: inputs.confirm != 'PROMOTE'
+        run: |
+          echo "::error::Type PROMOTE in the confirm box. This deploys to real customers."
+          exit 1
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the commit
+        id: resolve
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse "${{ inputs.commit }}^{commit}")
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "short=$(git rev-parse --short "$SHA")" >> "$GITHUB_OUTPUT"
+          echo "Promoting $SHA"
+          git log -1 --format='%an — %s' "$SHA"
+
+      - name: Refuse a commit that is not on the main branch
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${{ steps.resolve.outputs.sha }}" origin/main; then
+            echo "::error::That commit is not an ancestor of main. Only reviewed, merged work is promotable."
+            exit 1
+          fi
+
+      - name: Refuse a commit whose CI did not pass
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = '${{ steps.resolve.outputs.sha }}'
+            const { data } = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: sha,
+            })
+            const runs = data.check_runs.filter((run) => run.name !== 'Check, tag and promote')
+            if (runs.length === 0) {
+              core.setFailed(`No checks have run for ${sha}. Wait for CI, then promote.`)
+              return
+            }
+            const bad = runs.filter((run) => run.conclusion !== 'success' && run.conclusion !== 'skipped')
+            if (bad.length > 0) {
+              core.setFailed(
+                `These checks did not pass for ${sha}: ${bad.map((r) => `${r.name} (${r.conclusion ?? 'in progress'})`).join(', ')}`,
+              )
+              return
+            }
+            core.info(`${runs.length} checks passed for ${sha}.`)
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Migration safety on what production is about to receive
+        run: |
+          set -euo pipefail
+          git checkout --quiet "${{ steps.resolve.outputs.sha }}"
+          git fetch origin production 2>/dev/null || true
+          if git rev-parse --verify --quiet origin/production >/dev/null; then
+            NEW=$(git diff --name-only origin/production...HEAD -- prisma/migrations \
+              | cut -d/ -f3 | sort -u | paste -sd, -)
+          else
+            NEW=""
+          fi
+          echo "New migrations for production: ${NEW:-none}"
+          FLAGS=""
+          if [ "${{ inputs.allow_destructive_migration }}" = "true" ]; then
+            FLAGS="--allow-destructive"
+            echo "::warning::Destructive migrations were explicitly allowed for this release."
+          fi
+          node scripts/check-migrations.mjs --only "$NEW" $FLAGS | tee migration-report.txt
+          {
+            echo '## Migrations in this release'
+            echo
+            echo '```'
+            cat migration-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record the release
+        id: tag
+        run: |
+          set -euo pipefail
+          TAG="release-$(date -u +%Y%m%d-%H%M%S)-${{ steps.resolve.outputs.short }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          git tag -a "$TAG" "${{ steps.resolve.outputs.sha }}" \
+            -m "Promoted to production by ${{ github.actor }}"
+          git push origin "$TAG"
+
+      - name: Move production to this commit
+        # Not a merge and not a rebuild: the production branch is set to the
+        # exact commit that ran on staging, so what deploys is what was tested.
+        # Railway builds from this branch; a rollback is the same command with
+        # the previous release tag.
+        run: |
+          set -euo pipefail
+          git push --force-with-lease origin "${{ steps.resolve.outputs.sha }}:refs/heads/production"
+          echo "production → ${{ steps.resolve.outputs.sha }}"
+
+      - name: Wait for production to come back healthy
+        if: vars.PRODUCTION_URL != ''
+        env:
+          HEALTH_CHECK_ATTEMPTS: '40'
+          HEALTH_CHECK_DELAY_MS: '15000'
+        run: node scripts/health-check.mjs "${{ vars.PRODUCTION_URL }}" --expect production
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo '## Release ${{ steps.tag.outputs.tag }}'
+            echo
+            echo "- commit: \`${{ steps.resolve.outputs.sha }}\`"
+            echo "- promoted by: @${{ github.actor }}"
+            echo "- production: ${{ vars.PRODUCTION_URL }}"
+            echo
+            echo 'To roll back, run **Roll back production** with the previous release tag.'
+          } >> "$GITHUB_STEP_SUMMARY"

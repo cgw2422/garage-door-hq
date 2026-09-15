@@ -18,6 +18,31 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;')
 }
 
+/**
+ * A URL that is safe to put in an `href` or a `src`.
+ *
+ * Escaping stops an attacker breaking out of the attribute; it does nothing
+ * about the scheme inside it. `javascript:`, `data:` and `vbscript:` are all
+ * perfectly well-formed URLs, and a company's own review link and logo URL are
+ * values somebody typed into a settings form.
+ *
+ * So the scheme is checked against a list of the four that make sense in an
+ * email, and anything else becomes an inert `#`. This is the second line —
+ * the settings form refuses them too — because an email lands in someone
+ * else's inbox and is the one output this product cannot recall.
+ */
+const SAFE_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:'])
+
+export function safeUrl(value: string): string {
+  try {
+    const parsed = new URL(value)
+    return SAFE_SCHEMES.has(parsed.protocol) ? value : '#'
+  } catch {
+    // Not absolute. A relative URL in an email goes nowhere useful anyway.
+    return '#'
+  }
+}
+
 export interface EmailBody {
   /** The one sentence the message exists to say. */
   headline: string
@@ -40,13 +65,13 @@ export function renderEmailHtml(branding: SenderBranding, body: EmailBody): stri
   const platform = platformBranding()
 
   const logo = branding.logoUrl
-    ? `<img src="${escapeHtml(branding.logoUrl)}" alt="${escapeHtml(branding.companyName)}" height="44" style="max-height:44px;width:auto;border:0;display:block;margin:0 auto 10px" />`
+    ? `<img src="${escapeHtml(safeUrl(branding.logoUrl))}" alt="${escapeHtml(branding.companyName)}" height="44" style="max-height:44px;width:auto;border:0;display:block;margin:0 auto 10px" />`
     : ''
 
   const action = body.action
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:26px auto 4px">
          <tr><td align="center" bgcolor="${BRAND}" style="border-radius:10px">
-           <a href="${escapeHtml(body.action.url)}"
+           <a href="${escapeHtml(safeUrl(body.action.url))}"
               style="display:inline-block;padding:15px 30px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:10px">
              ${escapeHtml(body.action.label)}
            </a>

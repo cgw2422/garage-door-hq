@@ -21,6 +21,7 @@ import { provisionOrganization } from '@/server/organizations/provision'
 import { recordAudit } from '@/lib/audit'
 import { DEMO_CATALOG, DEMO_PRICE, DEMO_SERVICES } from './catalog'
 import { RESIDENTIAL_INSPECTION, isValidResponse } from '@/lib/inspection-template'
+import { assertNotProduction } from '@/lib/environment'
 
 /**
  * The application's own client, re-exported so the two standalone scripts can
@@ -93,9 +94,17 @@ function monthsAgo(months: number): Date {
  * a seed, so the seed resets everything rather than working around them.
  */
 export async function resetDatabase() {
+  // On production there is no escape hatch, because there is no version of
+  // "truncate every table" that is right when the rows belong to real garage
+  // door companies. An environment variable is not enough of a decision.
+  assertNotProduction('Resetting the database')
+
+  // Anywhere else that is deployed — staging, a review app — it still takes an
+  // explicit opt-in, so a stray `npm run db:seed` against the wrong
+  // DATABASE_URL does not quietly empty the environment somebody is testing.
   if (process.env.NODE_ENV === 'production' && process.env.ALLOW_SEED_RESET !== 'true') {
     throw new Error(
-      'Refusing to reset a production database. Set ALLOW_SEED_RESET=true if that is really what you want.',
+      'Refusing to reset a deployed database. Set ALLOW_SEED_RESET=true if that is really what you want.',
     )
   }
 

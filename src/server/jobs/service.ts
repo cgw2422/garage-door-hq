@@ -43,6 +43,26 @@ export async function createJob(session: AppSession, input: CreateJobInput) {
     }
   }
 
+  // The two foreign keys that are easy to forget, because no form field asks
+  // the user to type them. A job type belongs to one company's own list, and
+  // work can only be given to someone on this team — the same rule the
+  // schedule's assign action already enforces, applied at creation too.
+  if (input.jobTypeId) {
+    const jobType = await session.db.jobType.findUnique({
+      where: { id: input.jobTypeId },
+      select: { id: true },
+    })
+    if (!jobType) throw new Error('That job type does not exist')
+  }
+
+  if (input.assignedToId) {
+    const membership = await session.db.membership.findFirst({
+      where: { userId: input.assignedToId, isActive: true },
+      select: { id: true },
+    })
+    if (!membership) throw new Error('That person is not on your team')
+  }
+
   const job = await prisma.$transaction(async (tx) => {
     const { number, displayNumber } = await nextIdentifier(
       tx,

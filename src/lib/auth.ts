@@ -2,7 +2,7 @@ import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import { z } from 'zod'
 import { prisma } from './db'
-import { verifyPassword } from './password'
+import { verifyAgainstDecoy, verifyPassword } from './password'
 import { clientAddress, consumeRateLimit } from './rate-limit'
 
 const credentialsSchema = z.object({
@@ -75,9 +75,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const user = await prisma.user.findUnique({ where: { email } })
         if (!user) {
-          // Spend comparable time on a missing account so response timing does
-          // not reveal which emails exist.
-          await verifyPassword(parsed.data.password, '$2a$12$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidin')
+          // Spend a real verification's worth of time on a missing account, so
+          // response timing does not answer "is this address a customer?".
+          await verifyAgainstDecoy(parsed.data.password)
           return null
         }
 

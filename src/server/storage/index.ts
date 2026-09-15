@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { appBaseUrlUnchecked } from '@/lib/app-url'
+import { storageNamespace } from '@/lib/environment'
 import { createLocalDriver } from './local'
 import { createR2Driver, readR2ConfigFromEnv } from './r2'
 import type { StorageDriver } from './types'
@@ -71,5 +72,9 @@ export function buildStorageKey(params: {
   const extension = EXTENSIONS[params.contentType] ?? 'bin'
   const now = new Date()
   const yyyymm = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}`
-  return `org/${params.organizationId}/${params.folder}/${yyyymm}/${randomUUID()}.${extension}`
+  // Namespaced by environment as well as by tenant. Staging and production are
+  // expected to use different buckets; this is the second line, so that even
+  // pointed at the same one by mistake their objects cannot collide and a
+  // staging cleanup sweep cannot reach a production photo.
+  return `${storageNamespace()}/org/${params.organizationId}/${params.folder}/${yyyymm}/${randomUUID()}.${extension}`
 }

@@ -1,4 +1,5 @@
 import Stripe from 'stripe'
+import { assertStripeKeyMatchesEnvironment } from '@/lib/environment'
 
 /**
  * The Stripe client, and the decision about whether there is one.
@@ -22,6 +23,11 @@ export interface StripeConfig {
 export function readStripeConfigFromEnv(): StripeConfig | null {
   const secretKey = process.env.STRIPE_SECRET_KEY
   if (!secretKey) return null
+  // A live key outside production is refused here, at the point the key is
+  // read, so there is no path from a staging deployment to a real charge on a
+  // real card — not through checkout, not through a webhook, not through a
+  // script that happens to import this module.
+  assertStripeKeyMatchesEnvironment(secretKey)
   return {
     secretKey,
     priceId: process.env.STRIPE_PRICE_ID_STANDARD || null,

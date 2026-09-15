@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { EstimateTier } from '@prisma/client'
 import { cn } from '@/lib/cn'
@@ -101,6 +101,22 @@ export function CustomerPresentation({
     () => options.find((option) => option.id === chosenId) ?? null,
     [options, chosenId],
   )
+
+  // Keep Back inside the presentation once the device has been handed over.
+  //
+  // Everything a customer must not see is already absent from this page — the
+  // costs and margins were never loaded. The browser is the remaining hole:
+  // one Back gesture lands on the technician's estimate editor, which has all
+  // of it. So while the customer is holding the device, a back gesture moves
+  // between the stages of the presentation instead of leaving it.
+  //
+  // This is a guard, not a cage. Someone determined can still type a URL, and
+  // the real control is that the technician is standing next to them. What it
+  // fixes is the accident: a homeowner swiping back out of habit and finding
+  // the company's cost on a part.
+  useHistoryGuard(stage !== 'ready', () => {
+    if (stage === 'approve') setStage('choose')
+  })
 
   function approve() {
     if (!chosen || !signature || pending) return
@@ -388,6 +404,30 @@ export function CustomerPresentation({
       </div>
     </Shell>
   )
+}
+
+/**
+ * Hold the back gesture, while it matters.
+ *
+ * A pushed history entry gives the browser something to pop that is not the
+ * previous page. Each pop is answered by pushing another, so the presentation
+ * stays put and the caller decides what "back" should mean inside it.
+ */
+function useHistoryGuard(active: boolean, onBack: () => void) {
+  const handler = useCallback(onBack, [onBack])
+
+  useEffect(() => {
+    if (!active) return
+    window.history.pushState({ present: true }, '')
+
+    const onPopState = () => {
+      window.history.pushState({ present: true }, '')
+      handler()
+    }
+
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [active, handler])
 }
 
 /**

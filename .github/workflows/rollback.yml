@@ -1,0 +1,99 @@
+name: Roll back production
+
+# For the moment when production is broken and customers are waiting.
+#
+# One input: which release tag to go back to. No git knowledge, no local
+# checkout, no force-push typed from memory on a phone. The list of tags is in
+# the Releases tab and in the summary of every promotion.
+#
+# It does NOT undo a database migration, and it says so loudly. A rolled-back
+# application against a migrated database is fine when the migration was
+# additive (a new nullable column, a new table), which is the normal case. When
+# the migration was destructive, the restore procedure in docs/ENVIRONMENTS.md
+# is the path, not this.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to roll back to (e.g. release-20260915-120000-abc1234)'
+        required: true
+        type: string
+      confirm:
+        description: 'Type ROLLBACK to confirm'
+        required: true
+        type: string
+
+concurrency:
+  group: production-promotion
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    name: Move production back
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+
+    steps:
+      - name: Refuse an unconfirmed rollback
+        if: inputs.confirm != 'ROLLBACK'
+        run: |
+          echo "::error::Type ROLLBACK in the confirm box."
+          exit 1
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the tag
+        id: resolve
+        run: |
+          set -euo pipefail
+          if ! git rev-parse --verify --quiet "refs/tags/${{ inputs.tag }}" >/dev/null; then
+            echo "::error::No such tag: ${{ inputs.tag }}. Check the Releases tab."
+            exit 1
+          fi
+          SHA=$(git rev-parse "refs/tags/${{ inputs.tag }}^{commit}")
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          git log -1 --format='Rolling back to: %an — %s' "$SHA"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Say what the database will still be carrying
+        run: |
+          set -euo pipefail
+          git fetch origin production
+          BEHIND=$(git diff --name-only "${{ steps.resolve.outputs.sha }}...origin/production" \
+            -- prisma/migrations | cut -d/ -f3 | sort -u | paste -sd, -)
+          {
+            echo '## Rolling back to ${{ inputs.tag }}'
+            echo
+            if [ -n "$BEHIND" ]; then
+              echo "> **The database keeps these migrations:** \`$BEHIND\`"
+              echo '>'
+              echo '> The application is going back; the schema is not. That is safe for an'
+              echo '> additive migration and is not safe for a destructive one. If any of the'
+              echo '> above dropped a column or a table, restore from a backup instead —'
+              echo '> see docs/ENVIRONMENTS.md.'
+            else
+              echo 'No schema change between these two releases. A clean rollback.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Move production back
+        run: |
+          set -euo pipefail
+          git push --force origin "${{ steps.resolve.outputs.sha }}:refs/heads/production"
+          echo "production → ${{ steps.resolve.outputs.sha }}"
+
+      - name: Wait for production to come back healthy
+        if: vars.PRODUCTION_URL != ''
+        env:
+          HEALTH_CHECK_ATTEMPTS: '40'
+          HEALTH_CHECK_DELAY_MS: '15000'
+        run: node scripts/health-check.mjs "${{ vars.PRODUCTION_URL }}" --expect production

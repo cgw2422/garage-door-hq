@@ -180,15 +180,55 @@ export async function recalcEstimateTx(tx: Prisma.TransactionClient, estimateId:
  */
 type DuplicatePolicy = 'increment' | 'skip'
 
+/**
+ * What a quantity is allowed to be.
+ *
+ * Checked in the service rather than only in the action's schema, because the
+ * action is not the only caller and a quantity is the one number on an
+ * estimate that does come from the browser. The ceiling is not a business
+ * rule — it is arithmetic: quantity times unit price has to stay inside the
+ * integer cents the rest of the system counts in.
+ */
+const MAX_QUANTITY = 9999
+
+function assertQuantity(quantity: number) {
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    throw new EstimateError('Quantity must be greater than zero.')
+  }
+  if (quantity > MAX_QUANTITY) {
+    throw new EstimateError(`Quantity cannot be more than ${MAX_QUANTITY}.`)
+  }
+}
+
 async function appendLinesTx(
   tx: Prisma.TransactionClient,
-  optionId: string,
+  params: { optionId: string; organizationId: string },
   lines: Array<{ priceBookItemId: string; quantity: number }>,
   onDuplicate: DuplicatePolicy = 'increment',
 ) {
+  const { optionId, organizationId } = params
   const itemIds = lines.map((line) => line.priceBookItemId)
-  const catalog = await tx.priceBookItem.findMany({ where: { id: { in: itemIds } } })
+
+  // Scoped to the estimate's own organization, and not negotiable.
+  //
+  // This is the one place every priced line enters an estimate, and the only
+  // place that reads a catalog id the caller supplied. Without the tenant
+  // filter, posting another company's price book id here would copy their
+  // name, SKU, price and *cost* onto this estimate — a direct read of a
+  // competitor's numbers through a write nobody would think to check.
+  const catalog = await tx.priceBookItem.findMany({
+    where: { id: { in: itemIds }, organizationId },
+  })
   const byId = new Map(catalog.map((item) => [item.id, item]))
+
+  // A line that resolved to nothing is either a deleted item or an id from
+  // somewhere it should not have come from. Either way the caller asked for
+  // work this estimate cannot price, so it fails rather than quietly
+  // returning a shorter estimate than the one they thought they built.
+  const missing = itemIds.filter((id) => !byId.has(id))
+  if (missing.length > 0) {
+    throw new EstimateError('That item is not in your price book.')
+  }
 
   const existingCount = await tx.estimateItem.count({ where: { optionId } })
   const created = []
@@ -301,7 +341,12 @@ export async function addRemedyToEstimate(
 
     // A recommendation offered under three different findings is still one
     // service. Tapping it again must not move the total.
-    const created = await appendLinesTx(tx, option.id, lines, 'skip')
+    const created = await appendLinesTx(
+      tx,
+      { optionId: option.id, organizationId: session.organizationId },
+      lines,
+      'skip',
+    )
     await recalcOptionTx(tx, option.id, estimate.taxRateBps)
 
     if (params.inspectionItemId && created[0]) {
@@ -468,7 +513,7 @@ export async function addPackageToEstimate(
     })
     await appendLinesTx(
       tx,
-      option.id,
+      { optionId: option.id, organizationId: session.organizationId },
       pkg.items.map((item) => ({
         priceBookItemId: item.priceBookItemId,
         quantity: Number(item.quantity.toString()),
@@ -483,6 +528,8 @@ export async function addCatalogItemToEstimate(
   session: AppSession,
   params: { estimateId: string; optionId?: string; tier?: EstimateTier; priceBookItemId: string; quantity: number },
 ) {
+  assertQuantity(params.quantity)
+
   const estimate = await session.db.estimate.findUnique({ where: { id: params.estimateId } })
   if (!estimate) throw new EstimateError('Estimate not found')
   assertEditable(estimate.status)
@@ -498,7 +545,7 @@ export async function addCatalogItemToEstimate(
           name: TIER_NAMES[params.tier ?? 'STANDARD'],
         })
 
-    await appendLinesTx(tx, option.id, [
+    await appendLinesTx(tx, { optionId: option.id, organizationId: session.organizationId }, [
       { priceBookItemId: params.priceBookItemId, quantity: params.quantity },
     ])
     await recalcOptionTx(tx, option.id, estimate.taxRateBps)
@@ -613,7 +660,7 @@ export async function updateEstimateItemQuantity(
   session: AppSession,
   params: { itemId: string; quantity: number },
 ) {
-  if (!(params.quantity > 0)) throw new EstimateError('Quantity must be greater than zero.')
+  assertQuantity(params.quantity)
 
   const item = await prisma.estimateItem.findUnique({
     where: { id: params.itemId },

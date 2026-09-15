@@ -97,10 +97,10 @@ describe('settings are scoped to one company', () => {
     const { session: a } = await createTestCompany()
     const { session: b } = await createTestCompany()
     const theirNameBefore = b.organizationName
+    const myNameBefore = a.organizationName
 
     // The organization row is keyed by `id`, not `organizationId`, so the
-    // tenant client scopes it on that column instead. Asking for b's row from
-    // a's client addresses a's own row.
+    // tenant client scopes it on that column instead.
     await a.db.organization.updateMany({
       where: { id: b.organizationId },
       data: { name: 'Taken Over' },
@@ -111,21 +111,24 @@ describe('settings are scoped to one company', () => {
     })
     expect(theirs.name).toBe(theirNameBefore)
 
+    // And the write did not land on the caller's own row either. Scoping a
+    // query must narrow it to nothing, never redirect it somewhere else: an
+    // update aimed at another company that quietly edits your own is a
+    // different bug wearing the same clothes.
     const mine = await prisma.organization.findUniqueOrThrow({
       where: { id: a.organizationId },
     })
-    expect(mine.name).toBe('Taken Over')
+    expect(mine.name).toBe(myNameBefore)
   })
 
-  it('reads its own organization row even when asked for another', async () => {
+  it('finds nothing when asked for another company’s organization row', async () => {
     const { session: a } = await createTestCompany()
     const { session: b } = await createTestCompany()
 
-    const row = await a.db.organization.findUnique({ where: { id: b.organizationId } })
-    // The id is rewritten rather than filtered, so the query is answered from
-    // a's own row. The point is that b's row is unreachable either way.
-    expect(row?.id).toBe(a.organizationId)
-    expect(row?.id).not.toBe(b.organizationId)
+    expect(await a.db.organization.findUnique({ where: { id: b.organizationId } })).toBeNull()
+    // Its own row is still perfectly reachable.
+    const mine = await a.db.organization.findUnique({ where: { id: a.organizationId } })
+    expect(mine?.id).toBe(a.organizationId)
   })
 
   it('refuses to create an organization through a tenant client', async () => {

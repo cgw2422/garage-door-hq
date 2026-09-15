@@ -148,15 +148,34 @@ export async function completeJob(
 
   const result = await prisma.$transaction(
     async (tx) => {
-      // Re-read inside the transaction so two technicians tapping Complete at
-      // the same time cannot both pass the status check.
+      // Claim the job before doing anything else.
+      //
+      // A re-read inside the transaction is not enough: at Postgres's default
+      // READ COMMITTED isolation a SELECT takes no lock, so two requests — a
+      // double tap on a phone with a slow connection is the common one — both
+      // see IN_PROGRESS and both go on to deduct the parts and raise an
+      // invoice. A conditional UPDATE does take a row lock, so the second
+      // transaction waits for the first to commit and then matches no rows.
+      //
+      // This is the idempotency key for the whole operation: everything below
+      // is inside the same transaction, so it either all happens once or it
+      // rolls back and the claim goes with it.
+      const claimed = await tx.job.updateMany({
+        where: {
+          id: job.id,
+          organizationId: session.organizationId,
+          status: { notIn: ['COMPLETED', 'CANCELLED'] },
+        },
+        data: { status: 'COMPLETED', completedAt: now },
+      })
+      if (claimed.count !== 1) {
+        throw new CompletionError('This job is already completed.')
+      }
+
       const locked = await tx.job.findFirstOrThrow({
         where: { id: job.id, organizationId: session.organizationId },
         select: { status: true, startedAt: true, customerId: true },
       })
-      if (locked.status === 'COMPLETED') {
-        throw new CompletionError('This job is already completed.')
-      }
 
       // --- Parts used -------------------------------------------------------
       const partRows = []

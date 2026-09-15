@@ -14,6 +14,7 @@
  */
 
 import { appBaseUrl } from './app-url'
+import { environment, type DeployEnvironment } from './environment'
 
 /** Shown to whoever is standing in front of a half-configured deployment. */
 export const AUTH_NOT_CONFIGURED =
@@ -52,6 +53,16 @@ export type CheckState = 'ok' | 'missing' | 'unreachable' | 'not configured'
 export interface Readiness {
   /** False when something stops the product working at all. */
   ok: boolean
+  /**
+   * Which deployment answered. The first thing to check when a screenshot and
+   * a database disagree, and the one field here that is worth watching: a
+   * production environment reporting `declared: false` is one whose outbound
+   * safeguards were inferred rather than configured.
+   */
+  environment: {
+    name: DeployEnvironment
+    declared: boolean
+  }
   /** Required: without these, nobody can sign in or receive a link. */
   required: {
     database: CheckState
@@ -100,8 +111,11 @@ export async function checkReadiness(
     appUrl,
   }
 
+  const env = environment()
+
   return {
     ok: Object.values(required).every((state) => state === 'ok'),
+    environment: { name: env.name, declared: env.declared },
     required,
     optional: {
       storage: storageDriver === 'r2' ? 'r2' : 'local',

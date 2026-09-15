@@ -46,6 +46,38 @@ function assertValid(move: LedgerMove) {
   }
 }
 
+/**
+ * Every location named in a move must belong to the posting organization.
+ *
+ * This runs here rather than in each caller because this is the only door into
+ * the ledger, and a location id is exactly the sort of value that arrives from
+ * a form. Without it, a company could post stock into — or take stock out of —
+ * another company's truck simply by naming its id, and the row created would
+ * carry their own organizationId while pointing at somebody else's shelf.
+ *
+ * It is cheap: one indexed query per post, and a post is never a hot path.
+ */
+async function assertLocationsOwned(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  moves: LedgerMove[],
+) {
+  const ids = [
+    ...new Set(
+      moves.flatMap((move) => [move.fromLocationId, move.toLocationId].filter(Boolean) as string[]),
+    ),
+  ]
+  if (ids.length === 0) return
+
+  const owned = await tx.inventoryLocation.findMany({
+    where: { id: { in: ids }, organizationId },
+    select: { id: true },
+  })
+  if (owned.length !== ids.length) {
+    throw new LedgerError('That inventory location does not exist.')
+  }
+}
+
 async function applyDelta(
   tx: Prisma.TransactionClient,
   organizationId: string,
@@ -93,6 +125,7 @@ export async function postLedgerMovesTx(
 ) {
   const { organizationId, actorId, moves } = params
   moves.forEach(assertValid)
+  await assertLocationsOwned(tx, organizationId, moves)
 
   {
     const created = []

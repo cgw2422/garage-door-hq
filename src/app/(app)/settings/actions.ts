@@ -117,7 +117,23 @@ export async function saveLaborCostAction(
 
 const reviewSchema = z.object({
   provider: z.enum(['GOOGLE', 'FACEBOOK', 'YELP', 'BBB', 'ANGI', 'OTHER']),
-  url: z.string().url('Enter the full link, starting with https://').max(500),
+  // `.url()` alone accepts `javascript:alert(1)` — it is a well-formed URL.
+  // This link is put in an email to the company's own customers, so the scheme
+  // is checked as well as the shape.
+  url: z
+    .string()
+    .url('Enter the full link, starting with https://')
+    .max(500)
+    .refine(
+      (value) => {
+        try {
+          return ['http:', 'https:'].includes(new URL(value).protocol)
+        } catch {
+          return false
+        }
+      },
+      { message: 'That link must start with http:// or https://' },
+    ),
   label: z.string().max(80).optional(),
   reviewRequestEnabled: z.string().optional(),
 })

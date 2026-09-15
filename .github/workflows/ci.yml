@@ -1,0 +1,156 @@
+name: CI
+
+# Every push and every pull request. This is the gate: if it is red, the commit
+# does not go to staging, and it certainly does not get promoted to production.
+on:
+  push:
+    branches-ignore: [production]
+  pull_request:
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Tests talk to a real Postgres rather than a mock, because the things worth
+  # testing here — tenant scoping, transactions, unique constraints, row locks
+  # under concurrency — are the database's behaviour, not Prisma's.
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/garagedoorhq_test
+  SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/garagedoorhq_shadow
+  AUTH_SECRET: ci-only-not-a-real-secret-ci-only-not-a-real
+  APP_URL: http://127.0.0.1:3000
+  ALLOW_LOCAL_APP_URL: 'true'
+  APP_ENV: development
+  STORAGE_DRIVER: local
+
+jobs:
+  verify:
+    name: Typecheck, lint, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: garagedoorhq_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The migration check compares this release against production.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate the Prisma client
+        run: npx prisma generate
+
+      - name: Apply migrations
+        # `migrate deploy` — the same command production runs. Never `db push`,
+        # never `migrate dev`, so CI proves the exact path a release takes.
+        run: npx prisma migrate deploy
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # Split out so a failure names the thing that broke rather than "tests".
+      # These are the suites a beta cannot ship without.
+      - name: Tenant isolation
+        run: npx vitest run tests/security-cross-tenant.test.ts tests/tenancy.test.ts
+
+      - name: Authorization and privilege escalation
+        run: npx vitest run tests/security-authorization.test.ts tests/authorization.test.ts
+
+      - name: Authentication
+        run: npx vitest run tests/security-auth.test.ts tests/password-reset.test.ts tests/rate-limit.test.ts
+
+      - name: Money, stock and document integrity
+        run: npx vitest run tests/security-integrity.test.ts tests/completion.test.ts tests/estimates.test.ts tests/documents.test.ts tests/inventory.test.ts
+
+      - name: Environment safeguards
+        run: npx vitest run tests/environment.test.ts
+
+      - name: Everything else
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+  migrations:
+    name: Migration safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: What this release adds to production's schema
+        run: |
+          set -o pipefail
+          git fetch origin production --depth=50 2>/dev/null || true
+          if git rev-parse --verify --quiet origin/production >/dev/null; then
+            NEW=$(git diff --name-only origin/production...HEAD -- prisma/migrations \
+              | cut -d/ -f3 | sort -u | paste -sd, -)
+          else
+            echo "No production branch yet; checking every migration."
+            NEW=""
+          fi
+          echo "New migrations: ${NEW:-none}"
+          if [ -n "$NEW" ]; then
+            node scripts/check-migrations.mjs --only "$NEW" | tee migration-report.txt
+          else
+            node scripts/check-migrations.mjs --only "" | tee migration-report.txt
+          fi
+
+      - name: Put the report where a reviewer will see it
+        if: always()
+        run: |
+          {
+            echo '## Migration safety'
+            echo
+            echo '```'
+            cat migration-report.txt 2>/dev/null || echo 'no report'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Fail on a critical or high advisory in production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Report everything else without failing
+        if: always()
+        run: npm audit --omit=dev || true

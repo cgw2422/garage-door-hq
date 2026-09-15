@@ -10,6 +10,7 @@
  * companies, sees none of their data, and can be left in place or ignored.
  */
 
+import { assertNotProduction } from '@/lib/environment'
 import {
   DEMO_AFFILIATE_EMAIL,
   DEMO_EMAILS,
@@ -74,6 +75,8 @@ async function conflict(): Promise<string | null> {
  * cannot express still converges rather than failing.
  */
 export async function removeDemoData(): Promise<{ removed: boolean }> {
+  assertNotProduction('Deleting the demo company')
+
   const organization = await prisma.organization.findUnique({
     where: { slug: DEMO_SLUG },
     select: { id: true, slug: true },
@@ -202,6 +205,11 @@ async function tenantTablesInDeletionOrder(): Promise<string[]> {
 export async function installDemoData(
   options: { replace?: boolean } = {},
 ): Promise<InstallResult> {
+  // Never on production, whatever credential was presented. Demo data is
+  // fictional companies and fictional homeowners, and `replace` deletes a
+  // whole tenant — neither belongs anywhere near real customers' records.
+  assertNotProduction('Loading the demo company')
+
   let replaced = false
 
   if (options.replace) {

@@ -1,3 +1,4 @@
+import { guardOutbound } from './guard'
 import { createConsoleDriver } from './providers/console'
 import { createPostmarkDriver, readPostmarkConfigFromEnv } from './providers/postmark'
 import { createResendDriver, readResendConfigFromEnv } from './providers/resend'
@@ -41,6 +42,11 @@ export function email(): EmailDriver {
     }
     cached = createConsoleDriver()
   }
+
+  // Nothing gets a raw driver. Outside production this is what stands between
+  // a test estimate and a real homeowner's inbox; on production it is a
+  // pass-through, so there is no second code path to keep in step.
+  cached = guardOutbound(cached)
 
   return cached
 }

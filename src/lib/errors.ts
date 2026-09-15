@@ -37,6 +37,9 @@ const DOMAIN_ERRORS = new Set([
   'PortalError',
   'PrefixError',
   'PriceBookError',
+  // "Loading the demo company is disabled on production" is exactly what the
+  // person who tried it needs to read.
+  'ProductionSafetyError',
   'RateLimitError',
   'ReviewRequestError',
   'ScheduleError',

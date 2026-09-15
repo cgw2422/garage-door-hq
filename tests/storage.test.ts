@@ -18,6 +18,7 @@ function pngBytes(size: number) {
   return buffer
 }
 import { createTestCompany, createTestDoor, createTestJob } from './helpers'
+import { storageNamespace } from '@/lib/environment'
 
 /**
  * Photo capture is a two-phase upload: reserve a PENDING row, send the bytes to
@@ -67,7 +68,9 @@ describe('photo upload lifecycle', () => {
     expect(row.uploadStatus).toBe('PENDING')
     expect(row.organizationId).toBe(session.organizationId)
     // Keys are namespaced per tenant.
-    expect(row.storageKey.startsWith(`org/${session.organizationId}/photos/`)).toBe(true)
+    expect(
+      row.storageKey.startsWith(`${storageNamespace()}/org/${session.organizationId}/photos/`),
+    ).toBe(true)
 
     expect(upload.method).toBe('PUT')
     const token = upload.url.split('/').pop()!
@@ -184,7 +187,9 @@ describe('signatures', () => {
     expect(decodeSignature(dataUrl).byteLength).toBeGreaterThan(0)
 
     const key = await storeSignatureImage(session, dataUrl)
-    expect(key.startsWith(`org/${session.organizationId}/signatures/`)).toBe(true)
+    expect(
+      key.startsWith(`${storageNamespace()}/org/${session.organizationId}/signatures/`),
+    ).toBe(true)
     expect(await storage().head(key)).not.toBeNull()
   })
 
@@ -195,12 +200,32 @@ describe('signatures', () => {
 })
 
 describe('storage keys', () => {
-  it('namespaces by organization and dates the folder', () => {
+  it('namespaces by environment and organization, and dates the folder', () => {
     const key = buildStorageKey({
       organizationId: 'org-123',
       folder: 'photos',
       contentType: 'image/jpeg',
     })
-    expect(key).toMatch(/^org\/org-123\/photos\/\d{6}\/[0-9a-f-]+\.jpg$/)
+    // The environment comes first so staging and production cannot collide in
+    // a bucket, and a staging cleanup sweep cannot reach a production photo.
+    expect(key).toMatch(
+      new RegExp(`^${storageNamespace()}\\/org\\/org-123\\/photos\\/\\d{6}\\/[0-9a-f-]+\\.jpg$`),
+    )
+  })
+
+  it('never produces a guessable key', () => {
+    const keys = new Set(
+      Array.from({ length: 200 }, () =>
+        buildStorageKey({ organizationId: 'org-123', folder: 'photos', contentType: 'image/jpeg' }),
+      ),
+    )
+    expect(keys.size, 'two uploads produced the same object key').toBe(200)
+    // A v4 UUID for the filename: nothing sequential, nothing derived from the
+    // record, so a stored object cannot be found by walking ids.
+    for (const key of keys) {
+      expect(key).toMatch(
+        /\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jpg$/,
+      )
+    }
   })
 })

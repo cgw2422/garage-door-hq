@@ -66,6 +66,12 @@ const TENANT_MODELS = new Set<string>([
  */
 const SELF_SCOPED_MODELS = new Set<string>(['Organization'])
 
+/**
+ * A syntactically valid id that no row will ever carry, used to turn a
+ * cross-tenant lookup into an empty result rather than a redirected one.
+ */
+const NO_SUCH_ROW = '00000000-0000-0000-0000-000000000000'
+
 /** Operations whose `where` must be narrowed to the tenant. */
 const WHERE_SCOPED = new Set<string>([
   'findUnique',
@@ -108,7 +114,29 @@ export function tenantDb(organizationId: string) {
           if (WHERE_SCOPED.has(operation)) {
             // Prisma's extended `where` accepts non-unique filters alongside a
             // unique field, so this works for findUnique/update/delete too.
+            // It cannot be wrapped in `AND`, because findUnique requires the
+            // unique field at the top level.
+            //
+            // For a tenant model the two never name the same column, so the
+            // spread only ever narrows: `{ id: theirs, organizationId: ours }`
+            // matches nothing, which is the answer we want.
+            //
+            // `Organization` is the exception, because it is scoped by `id` —
+            // the same column a caller filters on. A plain spread would
+            // silently rewrite "fetch organization X" into "fetch mine",
+            // handing back a row that was not asked for. Narrowing must never
+            // widen or redirect, so a foreign id asked for here is replaced
+            // with one that cannot exist: reads find nothing, writes refuse.
+            // Read before the spread, which is what would hide it.
+            const askedForId = selfScoped
+              ? (next.where as { id?: unknown } | undefined)?.id
+              : undefined
+
             next.where = { ...(next.where as object | undefined), ...scope }
+
+            if (typeof askedForId === 'string' && askedForId !== organizationId) {
+              ;(next.where as { id: string }).id = NO_SUCH_ROW
+            }
           }
 
           if (DATA_SCOPED.has(operation)) {
