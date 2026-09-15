@@ -93,6 +93,25 @@ npm run db:studio    # browse the database
 npm run e2e          # live browser run of the whole field workflow
 ```
 
+### Security and environments
+
+```bash
+npm run adversarial   # two companies attacking each other through a browser
+npm run check:secrets # credentials in the working tree (--history for every commit)
+npm run check:migrations  # what a release would do to production's schema
+```
+
+- `docs/SECURITY-AUDIT.md` — the pre-beta audit: what was found, what was fixed,
+  what is left, and the verdict.
+- `docs/ENVIRONMENTS.md` — development / staging / production, how a release is
+  promoted, how it is rolled back, and how to restore a backup.
+
+Production deploys only from the `production` branch, which nothing writes
+except the promotion workflow. A normal push deploys to staging and leaves
+customers alone.
+
+---
+
 ### The end-to-end run
 
 ```bash
