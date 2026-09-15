@@ -135,6 +135,12 @@ const run = async () => {
   const phone = await browser.newContext(PHONE)
   const page = await phone.newPage()
 
+  // The Home page is what a garage door owner meets first, so it leads.
+  await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' })
+  await shot(page, 'home')
+  await shot(page, 'home-what-it-does', { scrollTo: 820 })
+  await shot(page, 'home-pricing', { scrollTo: 1900 })
+
   await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
   await shot(page, 'sign-in')
 
@@ -179,6 +185,12 @@ const run = async () => {
     await shot(page, 'customer-timeline', { scrollTo: 1400 })
   }
 
+  await page.goto(`${BASE}/jobs`, { waitUntil: 'domcontentloaded' })
+  await shot(page, 'jobs')
+
+  await page.goto(`${BASE}/customers`, { waitUntil: 'domcontentloaded' })
+  await shot(page, 'customers')
+
   await page.goto(`${BASE}/inventory`, { waitUntil: 'domcontentloaded' })
   await shot(page, 'inventory')
 
@@ -204,6 +216,47 @@ const run = async () => {
   await shot(page, 'price-book')
   await shot(page, 'price-book-items', { scrollTo: 520 })
 
+  // ------------------------------------------------------------ inspection
+  //
+  // Driven rather than merely visited: the answer sets only differ once
+  // something is answered, and the "Added" state only exists once a
+  // recommendation has been tapped.
+  const inspectionJobId = await withPrisma((prisma) =>
+    prisma.inspection
+      .findFirst({ orderBy: { createdAt: 'desc' }, select: { jobId: true } })
+      .then((row) => row?.jobId ?? null),
+  )
+
+  if (inspectionJobId) {
+    await page.goto(`${BASE}/jobs/${inspectionJobId}/inspection`, {
+      waitUntil: 'domcontentloaded',
+    })
+    await page.waitForTimeout(800)
+    await shot(page, 'inspection')
+
+    // Lubrication asks whether it was done; noise asks how loud. Neither is
+    // a condition, and the checklist says so.
+    for (const label of ['Lubrication: Needed', 'Noise / Vibration: Noticeable']) {
+      const button = page.locator(`button[aria-label="${label}"]`)
+      if (await button.count()) {
+        await button.first().click()
+        await page.waitForTimeout(900)
+      }
+    }
+    await page.locator('text=Lubrication').first().scrollIntoViewIfNeeded()
+    await page.waitForTimeout(400)
+    await shot(page, 'inspection-response-types')
+
+    const add = page.locator('button[aria-label^="Add "]').first()
+    if (await add.count()) {
+      await add.click()
+      await page.waitForTimeout(2200)
+      await page.locator('text=Lubrication').first().scrollIntoViewIfNeeded()
+      await page.waitForTimeout(400)
+      await shot(page, 'inspection-added-to-estimate')
+    }
+  }
+
   // ------------------------------------------------- what the customer sees
   //
   // Sending an estimate issues a private link and composes the email. No
@@ -217,6 +270,8 @@ const run = async () => {
 
   if (estimateId) {
     await page.goto(`${BASE}/estimates/${estimateId}`, { waitUntil: 'domcontentloaded' })
+    await shot(page, 'estimate')
+    await shot(page, 'estimate-options', { scrollTo: 700 })
     const send = page.locator('button:has-text("Send estimate")')
     if (await send.count()) {
       await send.evaluate((element) => element.click())
@@ -241,6 +296,16 @@ const run = async () => {
       await shot(customerPage, 'customer-signature', { scrollTo: 2600 })
       await customer.close()
     }
+  }
+
+  const invoiceId = await withPrisma((prisma) =>
+    prisma.invoice
+      .findFirst({ orderBy: { createdAt: 'desc' }, select: { id: true } })
+      .then((row) => row?.id ?? null),
+  )
+  if (invoiceId) {
+    await page.goto(`${BASE}/invoices/${invoiceId}`, { waitUntil: 'domcontentloaded' })
+    await shot(page, 'invoice')
   }
 
   // -------------------------------------------------- the lifecycle states
@@ -281,6 +346,10 @@ const run = async () => {
   // -------------------------------------------------------------- desktop
   const desktop = await browser.newContext(DESKTOP)
   const wide = await desktop.newPage()
+
+  await wide.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' })
+  await shot(wide, 'desktop-home')
+
   await signIn(wide, EMAIL)
   await shot(wide, 'desktop-today')
 
