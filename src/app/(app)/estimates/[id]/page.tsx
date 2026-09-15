@@ -97,6 +97,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
         estimate={{
           id: estimate.id,
           number: estimate.number,
+          kind: estimate.kind,
           status: estimate.status,
           title: estimate.title,
           taxRateBps: estimate.taxRateBps,

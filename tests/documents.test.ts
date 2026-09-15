@@ -76,6 +76,7 @@ beforeAll(async () => {
   signedTotalCents = better.totalCents
 
   await signEstimate(session, {
+    approvalMethod: 'REMOTE_LINK',
     estimateId,
     optionId: better.id,
     signerName: 'Sam Tester',

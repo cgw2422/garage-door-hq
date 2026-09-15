@@ -3,15 +3,21 @@ import { prisma } from '@/lib/db'
 import { nextIdentifier } from '@/lib/numbering'
 import { recordAudit } from '@/lib/audit'
 import type { AppSession } from '@/lib/session'
+import { estimateKindForJobType, optionNameFor } from '@/lib/estimate-presentation'
 import { computeTotals } from './documents'
 
 /**
  * Estimate construction.
  *
- * Good/Better/Best is a real structure here, not three text boxes: each tier is
- * an `EstimateOption` with its own itemized lines and its own stored totals. A
- * package is a reusable option — dropping one in copies its components as
- * individual priced lines, so the customer always sees what they are buying.
+ * An estimate is a list of options — one, two, three, occasionally more. Each
+ * is an `EstimateOption` with its own itemized lines and its own stored
+ * totals. A package is a reusable option: dropping one in copies its
+ * components as individual priced lines, so the customer always sees what they
+ * are buying.
+ *
+ * Good/Better/Best is one way to use that structure, not the structure itself.
+ * A technician who has one appropriate repair quotes one option; nothing here
+ * asks them to invent two more to fill a layout.
  *
  * Every line snapshots its name and unit price at the moment it is added. The
  * price book is never re-read to compute money on a saved document.
@@ -31,13 +37,6 @@ const TIER_NAMES: Record<EstimateTier, string> = {
   STANDARD: 'Recommended Work',
 }
 
-const TIER_ORDER: Record<EstimateTier, number> = {
-  GOOD: 0,
-  BETTER: 1,
-  BEST: 2,
-  STANDARD: 3,
-}
-
 function kindForCategory(category: string): LineItemKind {
   if (category === 'LABOR') return 'LABOR'
   if (category === 'SERVICE_CALL') return 'SERVICE_CALL'
@@ -48,7 +47,11 @@ function kindForCategory(category: string): LineItemKind {
 export async function ensureDraftEstimate(session: AppSession, jobId: string) {
   const job = await session.db.job.findUnique({
     where: { id: jobId },
-    select: { id: true, customerId: true, jobType: { select: { name: true } } },
+    select: {
+      id: true,
+      customerId: true,
+      jobType: { select: { name: true, slug: true } },
+    },
   })
   if (!job) throw new EstimateError('Job not found')
 
@@ -78,6 +81,10 @@ export async function ensureDraftEstimate(session: AppSession, jobId: string) {
         customerId: job.customerId,
         title: job.jobType?.name ?? 'Recommended Work',
         status: 'DRAFT',
+        // A new door is a different sale from a repair: it defaults to being
+        // sent rather than presented, and is where the richer proposal will
+        // hang. Read from the job type rather than asked for.
+        kind: estimateKindForJobType(job.jobType?.slug),
         // Company defaults at creation time; the document owns them from here,
         // so editing settings later cannot rewrite this estimate.
         taxRateBps: session.defaultTaxRateBps,
@@ -87,29 +94,49 @@ export async function ensureDraftEstimate(session: AppSession, jobId: string) {
   })
 }
 
+/**
+ * Find the option this work belongs in, or start one.
+ *
+ * Identified by name rather than by a tier slot, because most estimates have
+ * no tiers: "Replace Both Springs" is an option in its own right, and adding
+ * the same recommendation twice should land in the option it already made
+ * rather than opening a second one beside it.
+ *
+ * `tier` is passed only when the caller is deliberately building a
+ * Good/Better/Best set. Everywhere else it stays null, and the option's own
+ * name is what the customer reads.
+ */
 async function ensureOptionTx(
   tx: Prisma.TransactionClient,
   params: {
     estimateId: string
-    tier: EstimateTier
-    name?: string
+    name: string
+    tier?: EstimateTier | null
     description?: string | null
     isRecommended?: boolean
   },
 ) {
   const existing = await tx.estimateOption.findFirst({
-    where: { estimateId: params.estimateId, tier: params.tier },
+    where: params.tier
+      ? { estimateId: params.estimateId, tier: params.tier }
+      : { estimateId: params.estimateId, name: params.name },
   })
   if (existing) return existing
+
+  const last = await tx.estimateOption.findFirst({
+    where: { estimateId: params.estimateId },
+    orderBy: { sortOrder: 'desc' },
+    select: { sortOrder: true },
+  })
 
   return tx.estimateOption.create({
     data: {
       estimateId: params.estimateId,
-      tier: params.tier,
-      name: params.name ?? TIER_NAMES[params.tier],
+      tier: params.tier ?? null,
+      name: params.name,
       description: params.description ?? null,
       isRecommended: params.isRecommended ?? false,
-      sortOrder: TIER_ORDER[params.tier],
+      sortOrder: last ? last.sortOrder + 1 : 0,
     },
   })
 }
@@ -229,7 +256,17 @@ export interface AddRemedyResult {
  */
 export async function addRemedyToEstimate(
   session: AppSession,
-  params: { jobId: string; inspectionItemId?: string | null; remedyId: string },
+  params: {
+    jobId: string
+    inspectionItemId?: string | null
+    remedyId: string
+    /**
+     * Only set by the Build Options shortcut, which is deliberately building
+     * a Good/Better/Best set. Adding a recommendation from a finding leaves
+     * this alone, and the option is named after the work instead.
+     */
+    asTier?: EstimateTier | null
+  },
 ): Promise<AddRemedyResult> {
   const remedy = await session.db.inspectionRemedy.findUnique({
     where: { id: params.remedyId },
@@ -242,7 +279,6 @@ export async function addRemedyToEstimate(
 
   const estimate = await ensureDraftEstimate(session, params.jobId)
 
-  const tier: EstimateTier = remedy.package?.defaultTier ?? 'STANDARD'
   const lines = remedy.package
     ? remedy.package.items.map((item) => ({
         priceBookItemId: item.priceBookItemId,
@@ -257,8 +293,8 @@ export async function addRemedyToEstimate(
   const result = await prisma.$transaction(async (tx) => {
     const option = await ensureOptionTx(tx, {
       estimateId: estimate.id,
-      tier,
-      name: remedy.package?.name ?? TIER_NAMES[tier],
+      tier: params.asTier ?? null,
+      name: optionNameFor(remedy),
       description: remedy.package?.description ?? remedy.description,
       isRecommended: remedy.package?.isRecommendedDefault ?? false,
     })
@@ -311,7 +347,6 @@ export async function removeRemedyFromEstimate(
   if (!estimate) return { estimateId: null, removed: 0 }
   assertEditable(estimate.status)
 
-  const tier: EstimateTier = remedy.package?.defaultTier ?? 'STANDARD'
   const targetItemIds = remedy.package
     ? remedy.package.items.map((line) => line.priceBookItemId)
     : remedy.priceBookItemId
@@ -319,8 +354,11 @@ export async function removeRemedyFromEstimate(
       : []
   if (targetItemIds.length === 0) return { estimateId: estimate.id, removed: 0 }
 
+  // The same option the add path would have used, found the same way — by
+  // name. Looking it up by tier would miss every estimate that has no tiers,
+  // which is now most of them.
   const option = await prisma.estimateOption.findFirst({
-    where: { estimateId: estimate.id, tier },
+    where: { estimateId: estimate.id, name: optionNameFor(remedy) },
     select: { id: true },
   })
   if (!option) return { estimateId: estimate.id, removed: 0 }
@@ -387,9 +425,19 @@ export async function addAllRemediesToEstimate(
       // link exists to show "already quoted", not to track every line.
       inspectionItemId: addedItemIds.length === 0 ? params.inspectionItemId : null,
       remedyId: remedy.id,
+      asTier: remedy.package?.defaultTier ?? null,
     })
     estimateId = result.estimateId
     addedItemIds.push(...result.addedItemIds)
+  }
+
+  // Asked for explicitly, so recorded explicitly. Nothing infers tiers from
+  // the fact that an estimate happens to have three options.
+  if (estimateId) {
+    await prisma.estimate.update({
+      where: { id: estimateId },
+      data: { presentation: 'GOOD_BETTER_BEST' },
+    })
   }
 
   return { estimateId, addedItemIds }
@@ -410,12 +458,10 @@ export async function addPackageToEstimate(
   if (!pkg) throw new EstimateError('Package not found')
   assertEditable(estimate.status)
 
-  const tier = params.tier ?? pkg.defaultTier ?? 'STANDARD'
-
   return prisma.$transaction(async (tx) => {
     const option = await ensureOptionTx(tx, {
       estimateId: estimate.id,
-      tier,
+      tier: params.tier ?? null,
       name: pkg.name,
       description: pkg.description,
       isRecommended: pkg.isRecommendedDefault,
@@ -446,7 +492,11 @@ export async function addCatalogItemToEstimate(
       ? await tx.estimateOption.findFirstOrThrow({
           where: { id: params.optionId, estimateId: estimate.id },
         })
-      : await ensureOptionTx(tx, { estimateId: estimate.id, tier: params.tier ?? 'STANDARD' })
+      : await ensureOptionTx(tx, {
+          estimateId: estimate.id,
+          tier: params.tier ?? null,
+          name: TIER_NAMES[params.tier ?? 'STANDARD'],
+        })
 
     await appendLinesTx(tx, option.id, [
       { priceBookItemId: params.priceBookItemId, quantity: params.quantity },

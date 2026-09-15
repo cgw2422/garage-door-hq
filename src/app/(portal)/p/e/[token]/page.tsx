@@ -54,6 +54,7 @@ export default async function PortalEstimatePage({
       customerMessage={estimate.customerMessage}
       termsText={estimate.termsText}
       status={estimate.status}
+      presentation={estimate.presentation}
       selectedOptionId={estimate.selectedOptionId}
       signature={
         signature

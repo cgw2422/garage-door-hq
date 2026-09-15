@@ -217,6 +217,7 @@ export async function loadPortalEstimate(link: ResolvedPortalLink) {
       displayNumber: true,
       title: true,
       status: true,
+      presentation: true,
       customerMessage: true,
       termsText: true,
       taxRateBps: true,

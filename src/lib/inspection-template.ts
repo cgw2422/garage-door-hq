@@ -43,14 +43,14 @@ export const RESIDENTIAL_INSPECTION: InspectionComponent[] = [
   { key: 'panels', label: 'Panels', group: 'Door', responseType: 'CONDITION' },
   { key: 'bottom-seal', label: 'Bottom Seal', group: 'Door', responseType: 'CONDITION' },
   { key: 'weather-stripping', label: 'Weather Stripping', group: 'Door', responseType: 'CONDITION' },
-  { key: 'door-balance', label: 'Door Balance', group: 'Door', responseType: 'FUNCTION_TEST', hint: 'Disconnect and test at mid-travel' },
+  { key: 'door-balance', label: 'Door Balance', group: 'Door', responseType: 'BALANCE', hint: 'Disconnect and test at mid-travel' },
   { key: 'noise-vibration', label: 'Noise / Vibration', group: 'Door', responseType: 'NOISE' },
   { key: 'opener', label: 'Opener', group: 'Opener', responseType: 'FUNCTION_TEST' },
   { key: 'wall-control', label: 'Wall Control', group: 'Opener', responseType: 'FUNCTION_TEST' },
   { key: 'remotes', label: 'Remote Controls', group: 'Opener', responseType: 'FUNCTION_TEST' },
   { key: 'keypad', label: 'Keypad', group: 'Opener', responseType: 'FUNCTION_TEST' },
-  { key: 'photo-eyes', label: 'Photo Eyes / Safety Sensors', group: 'Safety', responseType: 'FUNCTION_TEST' },
-  { key: 'auto-reverse', label: 'Auto-Reverse Test', group: 'Safety', responseType: 'FUNCTION_TEST' },
+  { key: 'photo-eyes', label: 'Photo Eyes / Safety Sensors', group: 'Safety', responseType: 'ALIGNMENT' },
+  { key: 'auto-reverse', label: 'Auto-Reverse Test', group: 'Safety', responseType: 'SAFETY_TEST' },
   { key: 'manual-release', label: 'Manual Release', group: 'Safety', responseType: 'FUNCTION_TEST' },
 ]
 
@@ -78,7 +78,10 @@ export const RESPONSE_SETS: Record<InspectionResponseType, InspectionItemStatus[
   CONDITION: ['GOOD', 'WORN', 'NEEDS_ATTENTION', 'FAILED', 'NOT_APPLICABLE'],
   FUNCTION_TEST: ['PASS', 'NEEDS_ATTENTION', 'FAIL', 'NOT_APPLICABLE'],
   MAINTENANCE: ['COMPLETE', 'NEEDED', 'NOT_APPLICABLE'],
-  NOISE: ['NORMAL', 'NOTICEABLE', 'EXCESSIVE', 'NOT_APPLICABLE'],
+  NOISE: ['NORMAL', 'EXCESSIVE', 'NOT_APPLICABLE'],
+  BALANCE: ['BALANCED', 'NEEDS_ADJUSTMENT', 'UNABLE_TO_TEST', 'NOT_APPLICABLE'],
+  SAFETY_TEST: ['PASS', 'FAIL', 'UNABLE_TO_TEST', 'NOT_APPLICABLE'],
+  ALIGNMENT: ['WORKING', 'NEEDS_ADJUSTMENT', 'FAILED', 'NOT_APPLICABLE'],
 }
 
 /**
@@ -102,16 +105,23 @@ const SEVERITY: Record<InspectionItemStatus, InspectionSeverity> = {
   PASS: 'OK',
   COMPLETE: 'OK',
   NORMAL: 'OK',
+  BALANCED: 'OK',
+  WORKING: 'OK',
 
   WORN: 'MONITOR',
   NOTICEABLE: 'MONITOR',
 
   NEEDS_ATTENTION: 'ATTENTION',
   NEEDED: 'ATTENTION',
+  NEEDS_ADJUSTMENT: 'ATTENTION',
 
   FAILED: 'CRITICAL',
   FAIL: 'CRITICAL',
   EXCESSIVE: 'CRITICAL',
+
+  // Not a verdict. A test nobody could run is not a finding to quote from and
+  // not a clean bill of health either, so it reads as neither.
+  UNABLE_TO_TEST: 'NONE',
 }
 
 export function severityOf(status: InspectionItemStatus): InspectionSeverity {
@@ -153,10 +163,16 @@ export const STATUS_LABELS: Record<InspectionItemStatus, string> = {
   NORMAL: 'Normal',
   NOTICEABLE: 'Noticeable',
   EXCESSIVE: 'Excessive',
+  BALANCED: 'Balanced',
+  NEEDS_ADJUSTMENT: 'Needs Adjustment',
+  WORKING: 'Working',
+  UNABLE_TO_TEST: 'Unable to Test',
   NOT_APPLICABLE: 'N/A',
 }
 
 export const STATUS_LABELS_COMPACT: Record<InspectionItemStatus, string> = {
   ...STATUS_LABELS,
   NEEDS_ATTENTION: 'Attention',
+  NEEDS_ADJUSTMENT: 'Adjust',
+  UNABLE_TO_TEST: "Can't Test",
 }

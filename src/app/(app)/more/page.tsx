@@ -14,7 +14,7 @@ export default async function MorePage() {
   const tools = [
     { href: '/tools/spring-calculator', title: 'Spring Calculator', subtitle: 'Measure and match springs' },
     { href: '/schedule', title: 'Schedule', subtitle: 'Day and week view' },
-    { href: '/estimates', title: 'Estimates', subtitle: 'Good, better, best' },
+    { href: '/estimates', title: 'Estimates', subtitle: 'Present, approve and sign' },
     { href: '/invoices', title: 'Invoices', subtitle: 'Sent, partial and paid' },
   ]
 

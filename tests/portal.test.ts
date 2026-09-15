@@ -181,6 +181,7 @@ describe('signing through a link', () => {
     })
 
     const result = await signEstimate(resolved!.context, {
+    approvalMethod: 'REMOTE_LINK',
       estimateId,
       optionId: better.id,
       signerName: 'Customer On Phone',

@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/icons'
 import { JobTabs, type JobTab } from './tabs'
 import { JobStatusActions } from './status-actions'
+import { ApprovedEstimate } from './approved-estimate'
 import { ReviewRequestPanel } from './review-request'
 import { loadReviewContext } from '@/server/communications/review-requests'
 import { PhotoGrid } from '@/components/app/photo-grid'
@@ -81,7 +82,13 @@ export default async function JobDetailPage({
         take: 1,
         include: { items: { orderBy: { sortOrder: 'asc' } } },
       },
-      estimates: { orderBy: { createdAt: 'desc' }, include: { selectedOption: true } },
+      estimates: {
+        orderBy: { createdAt: 'desc' },
+        include: {
+          selectedOption: true,
+          signatures: { orderBy: { signedAt: 'desc' }, take: 1, select: { signerName: true } },
+        },
+      },
       invoices: { orderBy: { createdAt: 'desc' } },
       parts: true,
       photos: { where: READY_PHOTOS, orderBy: { createdAt: 'desc' } },
@@ -96,6 +103,13 @@ export default async function JobDetailPage({
   const springSystem = job.door?.springSystems[0] ?? null
   const customerName =
     job.customer.companyName ?? `${job.customer.firstName} ${job.customer.lastName}`
+
+  // The signed estimate, if there is one. However the customer approved it —
+  // on this device in the driveway or through a link from their kitchen table
+  // — this is what the technician is here to do.
+  const approved = job.estimates.find(
+    (estimate) => estimate.status === 'ACCEPTED' && estimate.selectedOption,
+  )
 
   // Only needed once the work is done; skipped entirely otherwise.
   const reviewContext =
@@ -150,6 +164,17 @@ export default async function JobDetailPage({
             />
           </div>
         </Card>
+
+        {approved?.selectedOption ? (
+          <ApprovedEstimate
+            jobId={job.id}
+            optionName={approved.selectedOption.name}
+            totalCents={approved.selectedOption.totalCents}
+            currency={session.currency}
+            signerName={approved.signatures[0]?.signerName ?? null}
+            canBegin={job.status !== 'IN_PROGRESS' && job.status !== 'COMPLETED' && job.status !== 'CANCELLED'}
+          />
+        ) : null}
 
         <JobTabs jobId={job.id} value={tab} />
 
@@ -233,7 +258,7 @@ export default async function JobDetailPage({
                 <EmptyState
                   icon={<DocumentIcon />}
                   title="No estimate yet"
-                  body="Present good, better and best on the phone and take a signature."
+                  body="Price the work, present it on this phone and take a signature."
                 />
               ) : (
                 job.estimates.map((estimate, index) => (

@@ -14,7 +14,6 @@ import {
   setRecommendedOption,
   updateEstimateItemQuantity,
 } from '@/server/estimates/builder'
-import { sendEstimate } from '@/server/estimates/lifecycle'
 
 /**
  * The estimate, and the inspection that recommended into it.
@@ -135,16 +134,17 @@ export async function setTaxRateAction(_prev: FormState, formData: FormData): Pr
   return {}
 }
 
+/**
+ * Open Customer Presentation Mode.
+ *
+ * Deliberately does not mark the estimate sent: nothing was sent. The
+ * technician is about to hand over their own phone, and a timeline that
+ * claims an email went out would be wrong forever after. The version the
+ * customer approves is frozen at signing, which is the record that matters.
+ */
 export async function presentEstimateAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const gate = await guarded(() => requireActiveSubscription('estimate:write'))
   if (!gate.ok) return gate.state
-  const session = gate.value
   const estimateId = String(formData.get('estimateId') ?? '')
-
-  try {
-    await sendEstimate(session, estimateId)
-  } catch (error) {
-    return failure(error, formData)
-  }
-  redirect(`/estimates/${estimateId}/sign`)
+  redirect(`/present/${estimateId}`)
 }

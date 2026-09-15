@@ -81,6 +81,7 @@ export async function portalSignAction(
   try {
     const requestHeaders = await headers()
     await signEstimate(link.context, {
+      approvalMethod: 'REMOTE_LINK',
       estimateId: link.estimateId,
       optionId: parsed.data.optionId,
       signerName: parsed.data.signerName,

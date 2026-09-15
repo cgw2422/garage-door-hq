@@ -5,10 +5,10 @@ import {
   loadQuoteState,
   loadQuotedServices,
   loadRemedies,
-  quotedKey,
   startInspection,
   type RemedyOption,
 } from '@/server/inspections/service'
+import { quotedKey } from '@/lib/estimate-presentation'
 import {
   addRemedyToEstimate,
   removeEstimateItem,
@@ -162,11 +162,12 @@ describe('a service offered under more than one finding', () => {
     }
   })
 
-  // Deliberately not shared across tiers. GOOD, BETTER and BEST are
-  // alternatives the customer picks between, so a roller swap inside the BEST
-  // package is a different offer from a roller swap on its own — treating them
-  // as the same would quietly drop a line from whichever one was chosen.
-  it('does not treat the same part in two tiers as one offer', async () => {
+  // Deliberately not shared across options. Options are alternatives the
+  // customer picks between, so a roller swap inside the "Both Springs +
+  // Rollers" package is a different offer from a roller swap on its own —
+  // treating them as the same would quietly drop a line from whichever one
+  // was chosen.
+  it('does not treat the same part in two options as one offer', async () => {
     const { session } = await createTestCompany()
     const rollerId = await skuId(session.organizationId, 'RLR-NYL-13')
 
@@ -175,15 +176,22 @@ describe('a service offered under more than one finding', () => {
       name: 'Roller Upgrade',
       description: null,
       priceCents: 12000,
+      optionName: 'Roller Upgrade',
       tier: 'STANDARD',
       isPackage: false,
       forStatuses: [],
       targetItemIds: [rollerId],
     }
-    const insideBest: RemedyOption = { ...standalone, id: 'b', tier: 'BEST', isPackage: true }
+    const insidePackage: RemedyOption = {
+      ...standalone,
+      id: 'b',
+      optionName: 'Both Springs + Rollers',
+      tier: 'BEST',
+      isPackage: true,
+    }
 
-    const quoted = new Set([quotedKey('BEST', rollerId)])
-    expect(isRemedyQuoted(insideBest, quoted)).toBe(true)
+    const quoted = new Set([quotedKey('Both Springs + Rollers', rollerId)])
+    expect(isRemedyQuoted(insidePackage, quoted)).toBe(true)
     expect(isRemedyQuoted(standalone, quoted)).toBe(false)
   })
 
@@ -193,6 +201,7 @@ describe('a service offered under more than one finding', () => {
       name: 'Nothing priced yet',
       description: null,
       priceCents: 0,
+      optionName: 'Nothing priced yet',
       tier: 'STANDARD',
       isPackage: false,
       forStatuses: [],
@@ -211,18 +220,17 @@ describe('a service offered under more than one finding', () => {
       name: 'Roller Swap + Tune-Up',
       description: null,
       priceCents: 20000,
+      optionName: 'Roller Swap + Tune-Up',
       tier: 'STANDARD',
       isPackage: true,
       forStatuses: [],
       targetItemIds: [roller, labor],
     }
 
-    expect(isRemedyQuoted(pkg, new Set([quotedKey('STANDARD', roller)]))).toBe(false)
+    const name = 'Roller Swap + Tune-Up'
+    expect(isRemedyQuoted(pkg, new Set([quotedKey(name, roller)]))).toBe(false)
     expect(
-      isRemedyQuoted(
-        pkg,
-        new Set([quotedKey('STANDARD', roller), quotedKey('STANDARD', labor)]),
-      ),
+      isRemedyQuoted(pkg, new Set([quotedKey(name, roller), quotedKey(name, labor)])),
     ).toBe(true)
   })
 

@@ -8,6 +8,7 @@ import {
   isValidResponse,
   severityOf,
 } from '@/lib/inspection-template'
+import { optionNameFor, quotedKey } from '@/lib/estimate-presentation'
 
 export class InspectionError extends Error {
   constructor(message: string) {
@@ -134,6 +135,18 @@ export interface RemedyOption {
   description: string | null
   /** Total price of everything the remedy adds, for the chip label. */
   priceCents: number
+  /**
+   * The name of the estimate option this recommendation lands in.
+   *
+   * The same string the builder uses, so "is this already quoted?" and "where
+   * does it go?" cannot disagree.
+   */
+  optionName: string
+  /**
+   * The package's own tier, when it has one. Used only by the Build Options
+   * shortcut, which is the one place that deliberately sells in tiers; nothing
+   * about membership depends on it.
+   */
   tier: 'GOOD' | 'BETTER' | 'BEST' | 'STANDARD'
   isPackage: boolean
   /** Empty means "offer this for any actionable finding". */
@@ -165,6 +178,7 @@ export async function loadRemedies(
       priceBookItem: { select: { priceCents: true, isActive: true } },
       package: {
         select: {
+          name: true,
           defaultTier: true,
           priceCents: true,
           isActive: true,
@@ -201,6 +215,7 @@ export async function loadRemedies(
       name: remedy.name,
       description: remedy.description,
       priceCents,
+      optionName: optionNameFor(remedy),
       tier: remedy.package?.defaultTier ?? 'STANDARD',
       isPackage: Boolean(remedy.packageId),
       forStatuses: remedy.forStatuses,
@@ -217,7 +232,7 @@ export async function loadRemedies(
 }
 
 /**
- * What is already on the job's draft estimate, as `TIER:priceBookItemId`.
+ * What is already on the job's draft estimate, as `option name:priceBookItemId`.
  *
  * This is the whole of the "already added" state. There is no per-button
  * memory anywhere: every recommendation that sells the same service reads
@@ -225,10 +240,11 @@ export async function loadRemedies(
  * Lubrication too, and removing it from the estimate turns both off. The
  * estimate is the truth; the buttons are a view of it.
  *
- * Keyed by tier as well as by service because the tiers are alternatives the
- * customer chooses between. A roller swap inside the BEST spring package is
- * not the same offer as a roller swap on its own, and treating them as one
- * would quietly drop a line from whichever the customer picked.
+ * Keyed by the option as well as by the service because options are
+ * alternatives the customer chooses between. A roller swap inside the
+ * "Replace Both Springs + Rollers" option is not the same offer as a roller
+ * swap on its own, and treating them as one would quietly drop a line from
+ * whichever the customer picked.
  */
 export async function loadQuotedServices(
   session: AppSession,
@@ -237,12 +253,8 @@ export async function loadQuotedServices(
   return (await loadQuoteState(session, jobId)).quoted
 }
 
-export function quotedKey(tier: string, priceBookItemId: string): string {
-  return `${tier}:${priceBookItemId}`
-}
-
 export interface QuoteState {
-  /** `TIER:priceBookItemId` for everything on the draft estimate. */
+  /** `option name:priceBookItemId` for everything on the draft estimate. */
   quoted: string[]
   estimate: { id: string; optionCount: number; lineCount: number; totalCents: number } | null
 }
@@ -263,7 +275,7 @@ export async function loadQuoteState(session: AppSession, jobId: string): Promis
       id: true,
       options: {
         select: {
-          tier: true,
+          name: true,
           totalCents: true,
           items: { select: { priceBookItemId: true } },
         },
@@ -275,7 +287,7 @@ export async function loadQuoteState(session: AppSession, jobId: string): Promis
   const quoted = new Set<string>()
   for (const option of estimate.options) {
     for (const item of option.items) {
-      if (item.priceBookItemId) quoted.add(quotedKey(option.tier, item.priceBookItemId))
+      if (item.priceBookItemId) quoted.add(quotedKey(option.name, item.priceBookItemId))
     }
   }
 
@@ -293,7 +305,7 @@ export async function loadQuoteState(session: AppSession, jobId: string): Promis
 /** True when everything this recommendation sells is already on the estimate. */
 export function isRemedyQuoted(remedy: RemedyOption, quoted: ReadonlySet<string>): boolean {
   if (remedy.targetItemIds.length === 0) return false
-  return remedy.targetItemIds.every((id) => quoted.has(quotedKey(remedy.tier, id)))
+  return remedy.targetItemIds.every((id) => quoted.has(quotedKey(remedy.optionName, id)))
 }
 
 /**

@@ -196,7 +196,7 @@ export default async function BillingPage({
             <ul className="space-y-2 text-sm leading-relaxed text-ink-muted">
               <li>Unlimited customers, jobs, doors and estimates</li>
               <li>Every technician on your team — no per-user fee</li>
-              <li>Door Passports, inspections and Good/Better/Best estimates</li>
+              <li>Door Passports, inspections and signed estimates</li>
               <li>Inventory, invoicing, PDFs and customer links</li>
               <li>Email delivery for estimates, invoices and receipts</li>
             </ul>

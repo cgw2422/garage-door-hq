@@ -732,6 +732,12 @@ enum InspectionResponseType {
   FUNCTION_TEST
   MAINTENANCE
   NOISE
+  /// A door balance test: balanced, needs adjusting, or could not be tested.
+  BALANCE
+  /// A safety test with a pass/fail outcome — auto-reverse, photo-eye block.
+  SAFETY_TEST
+  /// Something that works, needs aligning, or has failed — photo eyes, sensors.
+  ALIGNMENT
 }
 
 /// Every answer any response type can produce. Which subset is offered is
@@ -760,6 +766,18 @@ enum InspectionItemStatus {
   NORMAL
   NOTICEABLE
   EXCESSIVE
+
+  // BALANCE
+  BALANCED
+  NEEDS_ADJUSTMENT
+
+  // ALIGNMENT — WORKING is its healthy answer; it shares NEEDS_ADJUSTMENT
+  // and FAILED with the sets above.
+  WORKING
+
+  /// Not a finding and not a pass: the technician could not carry the test
+  /// out. Recording that honestly beats forcing a verdict nobody reached.
+  UNABLE_TO_TEST
 }
 
 model Inspection {
@@ -1057,11 +1075,44 @@ enum EstimateStatus {
   VOID
 }
 
+/// An optional label on an option, for companies that sell that way.
+///
+/// Optional is the point. A technician with one sensible repair should not
+/// have to invent a "Good" to sit beside it, so `EstimateOption.tier` is
+/// nullable and an untiered option is simply an option.
 enum EstimateTier {
   GOOD
   BETTER
   BEST
   STANDARD
+}
+
+/// How the options are meant to be shown to the customer.
+///
+/// PLAIN lets the number of options decide: one reads as a recommendation,
+/// two as a choice, several as a list. GOOD_BETTER_BEST is a deliberate sales
+/// method a company opts into, never a shape the software imposes.
+enum EstimatePresentation {
+  PLAIN
+  GOOD_BETTER_BEST
+}
+
+/// Repair work and a new door are different sales, and default to different
+/// channels: a repair is closed in the driveway, an installation is usually
+/// sent to be thought about. Also the hook for the richer installation
+/// proposal — manufacturer, collection, colour, windows, opener — which
+/// extends these same options rather than forking into its own quoting engine.
+enum EstimateKind {
+  REPAIR
+  INSTALLATION
+}
+
+/// Which channel the customer approved through, kept for the audit trail.
+enum ApprovalMethod {
+  /// The customer signed on the technician's phone or tablet, in person.
+  IN_PERSON_DEVICE
+  /// The customer opened their own private link and signed there.
+  REMOTE_LINK
 }
 
 model Estimate {
@@ -1080,6 +1131,13 @@ model Estimate {
   title      String?
   status     EstimateStatus @default(DRAFT)
 
+  /// Repair or installation. Decides which presentation channel leads, and is
+  /// where the richer installation fields will hang.
+  kind         EstimateKind         @default(REPAIR)
+  /// Whether the options are labelled Good/Better/Best. Never inferred from
+  /// how many there happen to be.
+  presentation EstimatePresentation @default(PLAIN)
+
   selectedOptionId String? @unique
 
   /// Copied from the organization when the estimate is created, then owned by
@@ -1093,10 +1151,12 @@ model Estimate {
   customerMessage   String?
   termsText         String?
 
-  sentAt     DateTime?
-  viewedAt   DateTime?
-  acceptedAt DateTime?
-  declinedAt DateTime?
+  sentAt         DateTime?
+  viewedAt       DateTime?
+  acceptedAt     DateTime?
+  declinedAt     DateTime?
+  /// How the customer approved it. Null until they do.
+  approvalMethod ApprovalMethod?
 
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -1121,13 +1181,15 @@ model Estimate {
 }
 
 model EstimateOption {
-  id            String       @id @default(uuid())
+  id            String        @id @default(uuid())
   estimateId    String
-  tier          EstimateTier
+  /// Null when the company is not selling this estimate as Good/Better/Best,
+  /// which is most of the time. The option's own name carries the meaning.
+  tier          EstimateTier?
   name          String
   description   String?
-  isRecommended Boolean      @default(false)
-  sortOrder     Int          @default(0)
+  isRecommended Boolean       @default(false)
+  sortOrder     Int           @default(0)
 
   /// Totals are stored, not derived at read time, so an accepted option can
   /// never change value because a price book entry was edited later.
@@ -1382,6 +1444,8 @@ model Signature {
   jobId             String?
   /// Hash of the exact document text the signer saw.
   documentHash      String?
+  /// Whether they signed on the technician's device or through their own link.
+  approvalMethod    ApprovalMethod?
 
   organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   estimate        Estimate?        @relation(fields: [estimateId], references: [id], onDelete: SetNull)

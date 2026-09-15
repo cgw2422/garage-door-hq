@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { InspectionItemStatus } from '@prisma/client'
 import { userMessage } from '@/lib/errors'
 import { requirePermission, requireActiveSubscription } from '@/lib/session'
 import { failure, type FormState, guarded } from '@/lib/form'
@@ -22,23 +23,11 @@ import {
 
 const statusSchema = z.object({
   itemId: z.string().uuid(),
-  // Every answer any response type can produce. Which of them this particular
-  // item actually accepts is the service's call, since only it knows the item.
-  status: z.enum([
-    'NOT_CHECKED',
-    'NOT_APPLICABLE',
-    'GOOD',
-    'WORN',
-    'NEEDS_ATTENTION',
-    'FAILED',
-    'PASS',
-    'FAIL',
-    'COMPLETE',
-    'NEEDED',
-    'NORMAL',
-    'NOTICEABLE',
-    'EXCESSIVE',
-  ]),
+  // Every answer any response type can produce, taken from the enum itself so
+  // that adding an answer set never leaves this list behind. Which of them this
+  // particular item actually accepts is the service's call, since only it knows
+  // the item.
+  status: z.nativeEnum(InspectionItemStatus),
   jobId: z.string().uuid(),
 })
 

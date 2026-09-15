@@ -47,11 +47,52 @@ describe('the answer sets', () => {
       'NOT_APPLICABLE',
     ])
     expect(RESPONSE_SETS.MAINTENANCE).toEqual(['COMPLETE', 'NEEDED', 'NOT_APPLICABLE'])
-    expect(RESPONSE_SETS.NOISE).toEqual([
-      'NORMAL',
-      'NOTICEABLE',
-      'EXCESSIVE',
+    expect(RESPONSE_SETS.NOISE).toEqual(['NORMAL', 'EXCESSIVE', 'NOT_APPLICABLE'])
+    expect(RESPONSE_SETS.BALANCE).toEqual([
+      'BALANCED',
+      'NEEDS_ADJUSTMENT',
+      'UNABLE_TO_TEST',
       'NOT_APPLICABLE',
+    ])
+    expect(RESPONSE_SETS.SAFETY_TEST).toEqual([
+      'PASS',
+      'FAIL',
+      'UNABLE_TO_TEST',
+      'NOT_APPLICABLE',
+    ])
+    expect(RESPONSE_SETS.ALIGNMENT).toEqual([
+      'WORKING',
+      'NEEDS_ADJUSTMENT',
+      'FAILED',
+      'NOT_APPLICABLE',
+    ])
+  })
+
+  // The words the spec asked for, component by component, so a rename has to
+  // be deliberate rather than a side effect of touching the enum.
+  it('asks each question in that question’s own words', () => {
+    expect(RESPONSE_SETS.BALANCE.map((status) => STATUS_LABELS[status])).toEqual([
+      'Balanced',
+      'Needs Adjustment',
+      'Unable to Test',
+      'N/A',
+    ])
+    expect(RESPONSE_SETS.SAFETY_TEST.map((status) => STATUS_LABELS[status])).toEqual([
+      'Pass',
+      'Fail',
+      'Unable to Test',
+      'N/A',
+    ])
+    expect(RESPONSE_SETS.ALIGNMENT.map((status) => STATUS_LABELS[status])).toEqual([
+      'Working',
+      'Needs Adjustment',
+      'Failed',
+      'N/A',
+    ])
+    expect(RESPONSE_SETS.NOISE.map((status) => STATUS_LABELS[status])).toEqual([
+      'Normal',
+      'Excessive',
+      'N/A',
     ])
   })
 
@@ -79,15 +120,21 @@ describe('the wording', () => {
     const words = [...Object.values(STATUS_LABELS), ...Object.values(STATUS_LABELS_COMPACT)]
     expect(words).not.toContain('Attn')
     expect(STATUS_LABELS.NEEDS_ATTENTION).toBe('Needs Attention')
-    // The one shortening, and it is still a word.
+    // Shortened on a narrow phone, and still a word rather than a form field.
     expect(STATUS_LABELS_COMPACT.NEEDS_ATTENTION).toBe('Attention')
   })
 
-  it('shortens exactly one answer, because only one does not fit', () => {
+  it('shortens only the answers that do not fit a phone', () => {
     const shortened = (Object.keys(STATUS_LABELS) as InspectionItemStatus[]).filter(
       (status) => STATUS_LABELS[status] !== STATUS_LABELS_COMPACT[status],
     )
-    expect(shortened).toEqual(['NEEDS_ATTENTION'])
+    // Three long answers, and every shortening is still something a person
+    // would say out loud.
+    expect(new Set(shortened)).toEqual(
+      new Set(['NEEDS_ATTENTION', 'NEEDS_ADJUSTMENT', 'UNABLE_TO_TEST']),
+    )
+    expect(STATUS_LABELS_COMPACT.NEEDS_ADJUSTMENT).toBe('Adjust')
+    expect(STATUS_LABELS_COMPACT.UNABLE_TO_TEST).toBe("Can't Test")
   })
 })
 
@@ -113,19 +160,17 @@ describe('the default template', () => {
   })
 
   it('asks tests whether they passed', () => {
-    for (const key of [
-      'door-balance',
-      'photo-eyes',
-      'auto-reverse',
-      'manual-release',
-      'wall-control',
-      'remotes',
-      'keypad',
-      'opener',
-    ]) {
+    for (const key of ['manual-release', 'wall-control', 'remotes', 'keypad', 'opener']) {
       const component = RESIDENTIAL_INSPECTION.find((entry) => entry.key === key)
       expect(component?.responseType, key).toBe('FUNCTION_TEST')
     }
+  })
+
+  it('asks the three checks nobody calls a pass in their own words', () => {
+    const byKey = new Map(RESIDENTIAL_INSPECTION.map((entry) => [entry.key, entry]))
+    expect(byKey.get('door-balance')?.responseType).toBe('BALANCE')
+    expect(byKey.get('auto-reverse')?.responseType).toBe('SAFETY_TEST')
+    expect(byKey.get('photo-eyes')?.responseType).toBe('ALIGNMENT')
   })
 
   it('asks maintenance whether it was done, and noise how loud', () => {
@@ -139,16 +184,21 @@ describe('the default template', () => {
 
   // The sentences that started this.
   it('cannot describe a balance test as worn, or lubrication as good', () => {
-    expect(isValidResponse('FUNCTION_TEST', 'WORN')).toBe(false)
+    expect(isValidResponse('BALANCE', 'WORN')).toBe(false)
     expect(isValidResponse('MAINTENANCE', 'GOOD')).toBe(false)
     expect(isValidResponse('NOISE', 'FAILED')).toBe(false)
     expect(isValidResponse('CONDITION', 'PASS')).toBe(false)
+    // A door is balanced or it is not; it does not "pass".
+    expect(isValidResponse('BALANCE', 'PASS')).toBe(false)
+    // And a spring cannot be "unable to test" — you can see it.
+    expect(isValidResponse('CONDITION', 'UNABLE_TO_TEST')).toBe(false)
   })
 })
 
 describe('severity, which is the only thing anything downstream sees', () => {
   it('treats every healthy answer alike', () => {
-    for (const status of ['GOOD', 'PASS', 'COMPLETE', 'NORMAL'] as InspectionItemStatus[]) {
+    const healthy = ['GOOD', 'PASS', 'COMPLETE', 'NORMAL', 'BALANCED', 'WORKING']
+    for (const status of healthy as InspectionItemStatus[]) {
       expect(severityOf(status), status).toBe('OK')
       expect(isActionable(status), status).toBe(false)
     }
@@ -162,8 +212,25 @@ describe('severity, which is the only thing anything downstream sees', () => {
   })
 
   it('quotes nothing for an answer that is not a finding', () => {
-    for (const status of ['NOT_CHECKED', 'NOT_APPLICABLE'] as InspectionItemStatus[]) {
+    // A test nobody could run is not a finding and not a clean bill of health.
+    for (const status of [
+      'NOT_CHECKED',
+      'NOT_APPLICABLE',
+      'UNABLE_TO_TEST',
+    ] as InspectionItemStatus[]) {
       expect(isActionable(status), status).toBe(false)
+      expect(severityOf(status), status).toBe('NONE')
+    }
+  })
+
+  it('treats every "sort this out" answer alike', () => {
+    for (const status of [
+      'NEEDS_ATTENTION',
+      'NEEDED',
+      'NEEDS_ADJUSTMENT',
+    ] as InspectionItemStatus[]) {
+      expect(severityOf(status), status).toBe('ATTENTION')
+      expect(isActionable(status), status).toBe(true)
     }
   })
 })
@@ -176,6 +243,8 @@ describe('remedies', () => {
     expect(remedyApplies(['FAILED', 'NEEDS_ATTENTION'], 'FAIL')).toBe(true)
     expect(remedyApplies(['FAIL'], 'FAILED')).toBe(true)
     expect(remedyApplies(['FAILED'], 'EXCESSIVE')).toBe(true)
+    // Words the remedy's author never saw, selling anyway.
+    expect(remedyApplies(['NEEDS_ATTENTION'], 'NEEDS_ADJUSTMENT')).toBe(true)
   })
 
   it('still respects a remedy that named a narrower finding', () => {
@@ -185,9 +254,11 @@ describe('remedies', () => {
 
   it('offers an unrestricted remedy for any finding, and for nothing healthy', () => {
     expect(remedyApplies([], 'NEEDED')).toBe(true)
-    expect(remedyApplies([], 'NOTICEABLE')).toBe(true)
+    expect(remedyApplies([], 'EXCESSIVE')).toBe(true)
     expect(remedyApplies([], 'PASS')).toBe(false)
+    expect(remedyApplies([], 'BALANCED')).toBe(false)
     expect(remedyApplies([], 'NOT_APPLICABLE')).toBe(false)
+    expect(remedyApplies([], 'UNABLE_TO_TEST')).toBe(false)
   })
 })
 
@@ -207,7 +278,7 @@ describe('a real inspection', () => {
 
     const byKey = new Map(items.map((item) => [item.componentKey, item]))
     expect(byKey.get('springs')?.responseType).toBe('CONDITION')
-    expect(byKey.get('door-balance')?.responseType).toBe('FUNCTION_TEST')
+    expect(byKey.get('door-balance')?.responseType).toBe('BALANCE')
     expect(byKey.get('lubrication')?.responseType).toBe('MAINTENANCE')
     expect(byKey.get('noise-vibration')?.responseType).toBe('NOISE')
 
@@ -217,10 +288,14 @@ describe('a real inspection', () => {
       setItemStatus(session, { itemId: balance.id, status: 'WORN' }),
     ).rejects.toThrow(InspectionError)
 
-    await setItemStatus(session, { itemId: balance.id, status: 'PASS' })
+    await expect(
+      setItemStatus(session, { itemId: balance.id, status: 'PASS' }),
+    ).rejects.toThrow(InspectionError)
+
+    await setItemStatus(session, { itemId: balance.id, status: 'BALANCED' })
     expect(
       (await prisma.inspectionItem.findUniqueOrThrow({ where: { id: balance.id } })).status,
-    ).toBe('PASS')
+    ).toBe('BALANCED')
 
     const lubrication = byKey.get('lubrication')!
     await expect(

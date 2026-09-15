@@ -211,12 +211,12 @@ environment variables (`.env.example` documents every one). No secrets in the re
   /today                         Today dashboard
   /jobs  /jobs/[id]              list + detail (tabs: Job · Door · Photos · Notes)
   /jobs/[id]/inspection          the walk-the-door checklist               [next]
-  /jobs/[id]/estimates/new       Good/Better/Best builder                  [next]
+  /jobs/[id]/estimates/new       estimate builder                          [next]
   /jobs/[id]/complete            completion checklist                      [next]
   /customers  /customers/[id]
   /properties/[id]
   /doors/[id]                    Door Passport
-  /estimates  /estimates/[id]    presentation + signature
+  /estimates  /estimates/[id]    the technician's builder (costs, margins, price book)
   /invoices   /invoices/[id]
   /inventory                     My Truck · Usage · Restock
   /inventory/items/[id]  /inventory/adjust  /inventory/transfer
@@ -225,6 +225,9 @@ environment variables (`.env.example` documents every one). No secrets in the re
   /schedule                      day / week
   /more                          everything not in the tab bar
   /settings/*                    company, profile, team, price book, inventory locations
+
+(present)/                       Customer Presentation Mode — no nav, no chrome
+  /present/[id]                  hand the device over: choose, approve, sign
 
 (portal)/                        customer-facing, no account
   /e/[token]                     view estimate, choose option, sign
@@ -277,13 +280,48 @@ the later forecasting needs is already being written by every `CONSUMPTION` row.
 
 ## 6. Estimate and invoice architecture
 
-### 6.1 Good / Better / Best
+### 6.1 Options, however many there are
 
-An `Estimate` owns two-to-three `EstimateOption` rows (`GOOD`, `BETTER`, `BEST`, or a single
-`STANDARD`), each with its own line items and its own stored totals. The customer picks one on
-the technician's phone; `Estimate.selectedOptionId` records the choice.
+An `Estimate` owns one or more `EstimateOption` rows, each with its own line items and its own
+stored totals. The customer picks one; `Estimate.selectedOptionId` records the choice.
 
-### 6.2 Two rules that protect the money
+**The number of options is the presentation.** One option reads as a recommendation to
+approve. Two or more read as a choice between them. Good/Better/Best is one way a company can
+sell, not the shape the software imposes: `EstimateOption.tier` is nullable and
+`Estimate.presentation` (`PLAIN` | `GOOD_BETTER_BEST`) records a deliberate decision rather
+than something inferred from the fact that an estimate happens to have three options. A lone
+option is never labelled "Good", because there is nothing for it to be better than.
+`src/lib/estimate-presentation.ts` holds that logic, and both the in-person presentation and
+the customer portal render from it, so the two channels cannot drift.
+
+**Two channels, one document.** A repair is normally closed standing in the driveway, so
+"Present to Customer" leads on a `REPAIR` estimate and "Send instead" is secondary; a new door
+is a decision people take home, so an `INSTALLATION` estimate leads with sending. Both
+channels run the same `signEstimate` path over the same options, prices, taxes, terms and
+frozen version — `Estimate.kind` decides which leads, and `ApprovalMethod`
+(`IN_PERSON_DEVICE` | `REMOTE_LINK`) records which was used.
+
+**Customer Presentation Mode** (`/present/[id]`) is its own route group with no navigation and
+no admin chrome. It selects only customer-safe fields — no cost, no margin, no SKU, no stock,
+no internal notes — shows the garage door company's branding rather than ours, and leaving it
+takes a deliberate two-tap technician action, because the customer is holding the device when
+the approval lands.
+
+### 6.2 Where the installation proposal will go
+
+A new door is a much richer document than a repair quote — manufacturer, collection, size,
+material, colour, panel design, insulation and R-value, window layout, hardware, opener,
+removal and haul-away, installation, separate product and labour warranties, photographs of
+the existing opening and imagery of the proposed door, optional upgrades and a deposit.
+
+None of that is built yet, and when it is, it extends this architecture rather than forking
+from it. `Estimate.kind = INSTALLATION` is the marker; each door configuration is still an
+`EstimateOption` with itemized `EstimateItem` lines, still frozen by `EstimateVersion`, still
+approved through the same `signEstimate` path on either channel. A second quoting engine
+beside this one would mean a second set of pricing rules, a second snapshot format and a
+second thing to get wrong about a signed document.
+
+### 6.3 Two rules that protect the money
 
 **Line items snapshot their price.** `EstimateItem` and `InvoiceItem` copy name, description,
 SKU and unit price at the moment the line is added. The `priceBookItemId` foreign key is kept
@@ -295,7 +333,7 @@ a SHA-256 `contentHash`. A `Signature` points at a version id and that hash. Edi
 accepted estimate produces a *new* version; the signed one remains byte-for-byte recoverable.
 "The customer approved something different" becomes provable rather than a matter of trust.
 
-### 6.3 Invoices and payments
+### 6.4 Invoices and payments
 
 `Invoice.balanceCents` is persisted (always `total − paid`) so "outstanding" and "past due"
 queries stay index-friendly. `Payment` records method, amount and the processing fee, and

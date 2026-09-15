@@ -749,9 +749,14 @@ export async function seedDemoData(): Promise<DemoSummary> {
   // --- Inspection already under way on the broken spring job ---------------
   //
   // Each answer is in the words its own component uses: the springs are Failed,
-  // the balance test Passed, the lubrication is Needed. Checked below against
+  // the lubrication is Needed, the photo eyes are Working. Checked below against
   // the template, so a mismatch stops the seed rather than seeding a sentence
   // no technician would say.
+  //
+  // Balance and auto-reverse read "Unable to Test" on purpose: with a broken
+  // spring the door will not run, so neither test can honestly be given a
+  // verdict. That is a real answer in this trade, and it is not a finding to
+  // quote from either.
   const findings: Record<string, InspectionItemStatus> = {
     springs: 'FAILED',
     cables: 'GOOD',
@@ -761,11 +766,11 @@ export async function seedDemoData(): Promise<DemoSummary> {
     tracks: 'GOOD',
     'bottom-seal': 'WORN',
     lubrication: 'NEEDED',
-    'noise-vibration': 'NOTICEABLE',
-    'door-balance': 'PASS',
+    'noise-vibration': 'EXCESSIVE',
+    'door-balance': 'UNABLE_TO_TEST',
     opener: 'PASS',
-    'photo-eyes': 'PASS',
-    'auto-reverse': 'PASS',
+    'photo-eyes': 'WORKING',
+    'auto-reverse': 'UNABLE_TO_TEST',
     'manual-release': 'PASS',
   }
 

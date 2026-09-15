@@ -1,3 +1,4 @@
+import type { ApprovalMethod } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { recordAudit } from '@/lib/audit'
 import type { AppSession, TenantContext } from '@/lib/session'
@@ -97,20 +98,27 @@ export interface SignEstimateInput {
   signatureDataUrl: string
   ipAddress?: string | null
   userAgent?: string | null
+  /**
+   * Which channel the customer approved through.
+   *
+   * The two channels are the same document, the same options, the same
+   * prices, the same terms and the same frozen version — only the screen
+   * differs. This is recorded so the history can say which, not because
+   * anything downstream treats them differently.
+   */
+  approvalMethod: ApprovalMethod
 }
 
 /**
  * Capture the customer's approval.
  *
+ * Runs for a technician holding their phone out in a driveway and for a
+ * customer following a portal link at their kitchen table. The actor differs;
+ * the guarantees do not.
+ *
  * Order matters: totals are recalculated, a version is frozen, and only then is
  * the signature written against that version's content hash. If anything fails
  * the whole thing rolls back and no signature exists for a document nobody saw.
- */
-/**
- * Capture the customer's approval.
- *
- * Runs for a technician on their phone and for a customer on a portal link.
- * The actor differs; the guarantees do not.
  */
 export async function signEstimate(session: TenantContext, input: SignEstimateInput) {
   const estimate = await session.db.estimate.findUnique({
@@ -154,6 +162,7 @@ export async function signEstimate(session: TenantContext, input: SignEstimateIn
         estimateVersionId: version.id,
         jobId: estimate.jobId,
         documentHash: version.contentHash,
+        approvalMethod: input.approvalMethod,
       },
     })
 
@@ -163,8 +172,12 @@ export async function signEstimate(session: TenantContext, input: SignEstimateIn
         status: 'ACCEPTED',
         selectedOptionId: input.optionId,
         acceptedAt: signedAt,
+        approvalMethod: input.approvalMethod,
         viewedAt: estimate.viewedAt ?? signedAt,
-        sentAt: estimate.sentAt ?? signedAt,
+        // An estimate approved on the technician's own device was never sent,
+        // and saying it was would be a lie the timeline repeats forever.
+        sentAt:
+          estimate.sentAt ?? (input.approvalMethod === 'REMOTE_LINK' ? signedAt : null),
       },
     })
 

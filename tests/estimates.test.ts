@@ -187,6 +187,7 @@ describe('signing freezes the document', () => {
     })
 
     const { signature, version } = await signEstimate(session, {
+    approvalMethod: 'REMOTE_LINK',
       estimateId: estimate.id,
       optionId: better.id,
       signerName: 'Sam Tester',
@@ -223,6 +224,7 @@ describe('signing freezes the document', () => {
     })
     await expect(
       signEstimate(session, {
+    approvalMethod: 'REMOTE_LINK',
         estimateId: estimate.id,
         optionId: estimate.options[0]!.id,
         signerName: 'Someone Else',

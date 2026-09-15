@@ -516,11 +516,13 @@ const run = async () => {
     // --- 11. Inspection and recommendations ----------------------------------
     await page.goto(`${jobUrl}/inspection`, { waitUntil: 'domcontentloaded' })
     await page.click('button[aria-label="Springs: Failed"]')
-    await page.waitForSelector('button:has-text("Add Good / Better / Best")', { timeout: 20_000 })
-    log('Marked Springs as Failed — tiered options appeared on the finding')
+    await page.waitForSelector('button:has-text("Build Options")', { timeout: 20_000 })
+    log('Marked Springs as Failed — the priced options appeared on the finding')
     await shot(page, '09-inspection-finding')
 
-    await page.click('button:has-text("Add Good / Better / Best")')
+    // The tiered set is a shortcut for companies that sell that way, offered
+    // below the individual services rather than instead of them.
+    await page.click('button:has-text("Build Options")')
     await page.waitForSelector('text=Review Estimate', { timeout: 20_000 })
 
     await page.click('button[aria-label="Rollers: Worn"]')
@@ -532,7 +534,14 @@ const run = async () => {
     // Each component offers the answers its own question takes. A balance test
     // passes or fails; lubrication is done or it is not; only parts wear.
     const answers = await page.evaluate(() => {
-      const wanted = ['Door Balance', 'Lubrication', 'Noise / Vibration', 'Springs']
+      const wanted = [
+        'Door Balance',
+        'Lubrication',
+        'Noise / Vibration',
+        'Springs',
+        'Auto-Reverse Test',
+        'Photo Eyes / Safety Sensors',
+      ]
       const out = {}
       for (const button of document.querySelectorAll('button[aria-label]')) {
         const [component, answer] = button.getAttribute('aria-label').split(': ')
@@ -542,19 +551,23 @@ const run = async () => {
       return out
     })
     for (const [component, expected] of [
-      ['Door Balance', 'Pass/Needs Attention/Fail/N/A'],
+      ['Door Balance', 'Balanced/Needs Adjustment/Unable to Test/N/A'],
       ['Lubrication', 'Complete/Needed/N/A'],
-      ['Noise / Vibration', 'Normal/Noticeable/Excessive/N/A'],
+      ['Noise / Vibration', 'Normal/Excessive/N/A'],
       ['Springs', 'Good/Worn/Needs Attention/Failed/N/A'],
+      ['Auto-Reverse Test', 'Pass/Fail/Unable to Test/N/A'],
+      ['Photo Eyes / Safety Sensors', 'Working/Needs Adjustment/Failed/N/A'],
     ]) {
       const offered = answers[component]?.join('/')
       if (offered !== expected) fail(`${component} offered ${offered}, expected ${expected}`)
     }
     if (answers['Door Balance']?.includes('Worn')) fail('A balance test should never be describable as Worn')
+    if (answers['Door Balance']?.includes('Pass')) fail('A door is balanced or it is not; it does not "pass"')
     log('Each item offers its own answers — no Worn balance test, no Good lubrication')
 
-    // And a failed function test sells the repair, exactly like a failed part.
-    await page.click('button[aria-label="Photo Eyes / Safety Sensors: Fail"]')
+    // And a safety sensor that failed sells the repair, exactly like a failed
+    // part, because severity is what the remedies match on.
+    await page.click('button[aria-label="Photo Eyes / Safety Sensors: Failed"]')
     await page.waitForSelector('button:has-text("Safety Sensor")', { timeout: 20_000 })
     log('A photo eye that did not pass offered the sensor replacement')
     await shot(page, '10-inspection-quoted')
@@ -567,15 +580,46 @@ const run = async () => {
     for (const tier of ['Good', 'Better', 'Best']) {
       expectText(estimateText, tier, `Estimate is missing the ${tier} option`)
     }
-    expectText(estimateText, 'Most Popular', 'No recommended option on the estimate')
+    expectText(estimateText, 'Recommended', 'No recommended option on the estimate')
     // The edited starter price must be the one that was quoted.
     expectText(estimateText, '$18.50', 'The estimate did not use the edited roller price')
     log('Estimate shows Good / Better / Best, itemized, priced from the edited price book')
     await shot(page, '11-estimate-builder')
 
-    await page.click('button:has-text("Present to customer")')
-    await page.waitForURL('**/sign', { timeout: 20_000 })
+    // --- 13. Customer Presentation Mode, on the technician's own device ------
+    //
+    // The primary way a repair is sold: the technician hands the phone over
+    // and the homeowner sees the company's estimate with none of the
+    // business's own numbers on it.
+    await page.click('button:has-text("Present to Customer")')
+    await page.waitForURL(/\/present\/[0-9a-f-]{36}$/, { timeout: 20_000 })
 
+    const handoverText = await bodyText(page)
+    expectText(handoverText, 'Ready to show your customer', 'No handover screen before presenting')
+    await shot(page, '11b-presentation-handover')
+
+    await page.click('button:has-text("Present Estimate")')
+    await page.waitForSelector('text=/Choose (your option|one of)/', { timeout: 20_000 })
+
+    const presentedText = await bodyText(page)
+    for (const secret of ['Cost', 'Margin', 'Gross profit', 'In stock', 'SKU']) {
+      if (contains(presentedText, secret)) {
+        fail(`Presentation Mode leaked internal information: ${secret}`)
+      }
+    }
+    expectText(presentedText, COMPANY, 'The presentation is not branded as the garage door company')
+    if (contains(presentedText, 'Garage Door HQ')) {
+      fail('The presentation shows our brand instead of the company’s')
+    }
+    // No app chrome for a customer to wander into.
+    if (await page.locator('nav a[href="/jobs"]').count()) {
+      fail('Presentation Mode still shows the technician’s navigation')
+    }
+    log('Presentation Mode: the company’s branding, no costs, no margins, no nav')
+    await shot(page, '11c-presentation-options')
+
+    // Leaving without signing, because this customer wants it emailed instead.
+    // Presenting changes nothing about the document.
     // --- Email the estimate to the customer ---------------------------------
     await page.goto(estimateUrl, { waitUntil: 'domcontentloaded' })
 
@@ -625,7 +669,7 @@ const run = async () => {
       })
       const portalText = await bodyText(customerPage)
       expectText(portalText, COMPANY.toLowerCase(), 'The customer page does not name the company')
-      expectText(portalText, 'good', 'The customer cannot see the options')
+      expectText(portalText, '25,000-cycle', 'The customer cannot see the options')
       if (contains(portalText, 'cost') && contains(portalText, 'margin')) {
         fail('The customer page leaks internal cost or margin')
       }
@@ -656,6 +700,18 @@ const run = async () => {
     } finally {
       await customerContext.close()
     }
+
+    // --- The technician's job screen answers the question ------------------
+    //
+    // Whichever channel approved it, the technician comes back to the job and
+    // the first thing on screen is what was approved, for how much, with the
+    // one thing to do about it.
+    await page.goto(jobUrl, { waitUntil: 'domcontentloaded' })
+    const approvedText = await bodyText(page)
+    expectText(approvedText, 'approved', 'The job screen does not show the approval')
+    expectText(approvedText, `signed by rachel ${lastName.toLowerCase()}`, 'The job screen does not name who signed')
+    log('Back on the job: Approved, the amount, and who signed it')
+    await shot(page, '16a-job-approved')
 
     // --- 17. Complete the job ------------------------------------------------
     await page.goto(`${jobUrl}/complete`, { waitUntil: 'domcontentloaded' })

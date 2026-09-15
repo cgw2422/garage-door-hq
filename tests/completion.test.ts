@@ -68,6 +68,7 @@ async function setupSignedSpringJob() {
     where: { estimateId: estimate.id, tier: 'BETTER' },
   })
   await signEstimate(session, {
+    approvalMethod: 'REMOTE_LINK',
     estimateId: estimate.id,
     optionId: better.id,
     signerName: 'Sam Tester',

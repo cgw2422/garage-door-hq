@@ -27,7 +27,7 @@ One plan. **$39.99/month, everything included, no limits.**
 **The workflow that works today**
 
 new customer → property → Door Passport → job → on my way / arrived / start →
-garage-door inspection → one-tap Good/Better/Best from a finding → itemized estimate →
+garage-door inspection → one tap from a finding to a priced option → itemized estimate →
 customer selects and signs → complete the job → inventory deducted, Door Passport updated,
 invoice generated → payment recorded → passport history shows what changed.
 

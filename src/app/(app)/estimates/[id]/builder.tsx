@@ -3,8 +3,10 @@
 import { useActionState, useState, useTransition } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
+import type { EstimateTier } from '@prisma/client'
 import { cn } from '@/lib/cn'
 import { formatCents } from '@/lib/money'
+import { TIER_LABELS, primaryChannel } from '@/lib/estimate-presentation'
 import type { FormState } from '@/lib/form'
 import { Alert } from '@/components/ui/alert'
 import { Button, ButtonLink } from '@/components/ui/button'
@@ -26,14 +28,7 @@ import {
   setTaxRateAction,
 } from './actions'
 
-type Tier = 'GOOD' | 'BETTER' | 'BEST' | 'STANDARD'
-
-const TIER_LABEL: Record<Tier, string> = {
-  GOOD: 'Good',
-  BETTER: 'Better',
-  BEST: 'Best',
-  STANDARD: 'Recommended',
-}
+type Tier = EstimateTier | null
 
 interface OptionView {
   id: string
@@ -80,6 +75,7 @@ export function EstimateBuilder({
     selectedOptionId: string | null
     jobId: string | null
     editable: boolean
+    kind: 'REPAIR' | 'INSTALLATION'
   }
   options: OptionView[]
   packages: Array<{ id: string; name: string; defaultTier: Tier | null }>
@@ -114,6 +110,7 @@ export function EstimateBuilder({
   const [showTax, setShowTax] = useState(false)
 
   const hasLines = options.some((option) => option.items.length > 0)
+  const sendFirst = primaryChannel(estimate.kind) === 'send'
 
   return (
     <>
@@ -188,7 +185,7 @@ export function EstimateBuilder({
                       <option key={pkg.id} value={pkg.id}>
                         {pkg.name}
                         {pkg.defaultTier && pkg.defaultTier !== 'STANDARD'
-                          ? ` (${TIER_LABEL[pkg.defaultTier]})`
+                          ? ` (${TIER_LABELS[pkg.defaultTier]})`
                           : ''}
                       </option>
                     ))}
@@ -296,6 +293,7 @@ export function EstimateBuilder({
         ) : null}
 
         {hasLines ? (
+          <div id="send-to-customer" className="scroll-mt-20">
           <SendDocument
             target="ESTIMATE"
             documentId={estimate.id}
@@ -305,6 +303,7 @@ export function EstimateBuilder({
             existingLink={portalLink}
             label="Send to the customer"
           />
+          </div>
         ) : null}
 
         {hasLines ? (
@@ -328,12 +327,52 @@ export function EstimateBuilder({
             Back to job
           </ButtonLink>
         ) : (
-          <form action={present} className="flex-1">
-            <input type="hidden" name="estimateId" value={estimate.id} />
-            <SubmitButton size="lg" fullWidth disabled={!hasLines} pendingLabel="Opening…">
-              Present to customer
-            </SubmitButton>
-          </form>
+          /*
+           * Two channels, one document. Which one leads depends on what is
+           * being sold: a repair is closed standing in the driveway, so
+           * presenting is primary; a new door is a decision people take home,
+           * so sending is. Neither is ever the only way.
+           */
+          <div className="flex-1 space-y-2">
+            {sendFirst ? (
+              <>
+                <a
+                  href="#send-to-customer"
+                  className="safe-tap flex h-12 w-full items-center justify-center rounded-[--radius-control] bg-brand-600 text-base font-bold text-white active:bg-brand-700"
+                >
+                  Send to Customer
+                </a>
+                <form action={present}>
+                  <input type="hidden" name="estimateId" value={estimate.id} />
+                  <SubmitButton
+                    variant="secondary"
+                    fullWidth
+                    disabled={!hasLines}
+                    pendingLabel="Opening…"
+                  >
+                    Present on this device
+                  </SubmitButton>
+                </form>
+              </>
+            ) : (
+              <>
+                <form action={present}>
+                  <input type="hidden" name="estimateId" value={estimate.id} />
+                  <SubmitButton size="lg" fullWidth disabled={!hasLines} pendingLabel="Opening…">
+                    Present to Customer
+                  </SubmitButton>
+                </form>
+                {hasLines ? (
+                  <a
+                    href="#send-to-customer"
+                    className="block py-1 text-center text-sm font-semibold text-brand-600"
+                  >
+                    Send instead
+                  </a>
+                ) : null}
+              </>
+            )}
+          </div>
         )}
       </StickyActions>
     </>
@@ -377,10 +416,14 @@ function OptionCard({
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-[0.6875rem] font-bold uppercase tracking-[0.14em] text-ink-subtle">
-              {TIER_LABEL[option.tier]}
-            </span>
-            {option.isRecommended ? <Chip tone="brand">Most Popular</Chip> : null}
+            {/* A tier label only where there is a tier. Most estimates have
+                none, and the option's own name is what it is called. */}
+            {option.tier ? (
+              <span className="text-[0.6875rem] font-bold uppercase tracking-[0.14em] text-ink-subtle">
+                {TIER_LABELS[option.tier]}
+              </span>
+            ) : null}
+            {option.isRecommended ? <Chip tone="brand">Recommended</Chip> : null}
             {isSelected ? <Chip tone="success">Selected</Chip> : null}
           </div>
           <p className="mt-1 text-base font-bold text-ink">{option.name}</p>

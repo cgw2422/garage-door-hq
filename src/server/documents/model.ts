@@ -33,7 +33,8 @@ export interface DocumentLine {
 }
 
 export interface DocumentOption {
-  tier: string
+  /** Null when the company is not selling this estimate as Good/Better/Best. */
+  tier: string | null
   name: string
   description?: string | null
   isRecommended: boolean

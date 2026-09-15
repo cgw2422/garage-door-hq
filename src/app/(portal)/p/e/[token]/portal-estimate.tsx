@@ -2,8 +2,10 @@
 
 import { useActionState, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import type { EstimatePresentation, EstimateTier } from '@prisma/client'
 import { cn } from '@/lib/cn'
 import { formatCents } from '@/lib/money'
+import { badgeFor, layoutFor, optionsHeading } from '@/lib/estimate-presentation'
 import type { FormState } from '@/lib/form'
 import { Alert } from '@/components/ui/alert'
 import { Card } from '@/components/ui/card'
@@ -17,7 +19,7 @@ import { portalSelectOptionAction, portalSignAction } from '../../actions'
 
 interface PortalOption {
   id: string
-  tier: string
+  tier: EstimateTier | null
   name: string
   description: string | null
   isRecommended: boolean
@@ -25,13 +27,6 @@ interface PortalOption {
   subtotalCents: number
   taxCents: number
   items: Array<{ id: string; name: string; description: string | null; quantity: number; lineCents: number }>
-}
-
-const TIER_LABEL: Record<string, string> = {
-  GOOD: 'Good',
-  BETTER: 'Better',
-  BEST: 'Best',
-  STANDARD: 'Recommended',
 }
 
 /**
@@ -52,6 +47,7 @@ export function PortalEstimate({
   selectedOptionId,
   signature,
   options,
+  presentation,
 }: {
   token: string
   companyName: string
@@ -66,7 +62,12 @@ export function PortalEstimate({
   selectedOptionId: string | null
   signature: { signerName: string; signedAt: string } | null
   options: PortalOption[]
+  presentation: EstimatePresentation
 }) {
+  // The same rules the in-person presentation uses: one option reads as a
+  // recommendation, several as a choice, and Good/Better/Best only when the
+  // company sells that way.
+  const layout = layoutFor(options, presentation)
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [selected, setSelected] = useState<string | null>(
@@ -131,13 +132,16 @@ export function PortalEstimate({
         </Alert>
       ) : (
         <p className="mb-3 px-1 text-sm text-ink-muted">
-          Choose the option you&apos;d like, then sign at the bottom.
+          {layout === 'single'
+            ? 'Review the recommended repair, then sign at the bottom.'
+            : `${optionsHeading(layout, options.length)}, then sign at the bottom.`}
         </p>
       )}
 
       <div className="space-y-3">
         {options.map((option) => {
           const isChosen = option.id === selected
+          const badge = badgeFor(option, layout)
           return (
             <button
               key={option.id}
@@ -152,12 +156,19 @@ export function PortalEstimate({
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[0.6875rem] font-bold uppercase tracking-[0.14em] text-ink-subtle">
-                      {TIER_LABEL[option.tier] ?? option.tier}
-                    </span>
-                    {option.isRecommended ? <Chip tone="brand">Most Popular</Chip> : null}
-                  </div>
+                  {/* Only labels that say something. A lone option is not a
+                      "Good", and an untiered option is just the work. */}
+                  {badge ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {badge.tone === 'tier' ? (
+                        <span className="text-[0.6875rem] font-bold uppercase tracking-[0.14em] text-ink-subtle">
+                          {badge.text}
+                        </span>
+                      ) : (
+                        <Chip tone="brand">{badge.text}</Chip>
+                      )}
+                    </div>
+                  ) : null}
                   <p className="mt-1 text-base font-bold text-ink">{option.name}</p>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-2">

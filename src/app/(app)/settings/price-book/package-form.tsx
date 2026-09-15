@@ -174,7 +174,7 @@ export function PackageForm({
                 Mark as the recommendation
               </span>
               <span className="text-sm text-ink-muted">
-                Shows as &ldquo;Most Popular&rdquo; when this package is added.
+                Shows as &ldquo;Recommended&rdquo; when this package is added, alongside other options.
               </span>
             </span>
           </label>

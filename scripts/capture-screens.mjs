@@ -272,6 +272,36 @@ const run = async () => {
     await page.goto(`${BASE}/estimates/${estimateId}`, { waitUntil: 'domcontentloaded' })
     await shot(page, 'estimate')
     await shot(page, 'estimate-options', { scrollTo: 700 })
+
+    // Customer Presentation Mode, which is how a repair is normally sold: the
+    // technician hands the phone over and the homeowner sees their own
+    // company's estimate with none of the business's numbers on it.
+    await page.goto(`${BASE}/present/${estimateId}`, { waitUntil: 'domcontentloaded' })
+    await shot(page, 'present-handover')
+    const begin = page.locator('button:has-text("Present Estimate")')
+    if (await begin.count()) {
+      await begin.click()
+      await page.waitForTimeout(600)
+      await shot(page, 'present-options')
+      await shot(page, 'present-options-detail', { scrollTo: 700 })
+
+      // Choosing an option is what turns the bottom bar into an approval, so
+      // the approval screen needs a choice made first.
+      const card = page.locator('button[aria-pressed]').first()
+      if (await card.count()) {
+        await card.click()
+        await page.waitForTimeout(400)
+      }
+      const approve = page.locator('button:has-text("Approve")').first()
+      if (await approve.count()) {
+        await approve.click()
+        await page.waitForTimeout(800)
+        await shot(page, 'present-approve')
+        await shot(page, 'present-signature', { scrollTo: 900 })
+      }
+    }
+
+    await page.goto(`${BASE}/estimates/${estimateId}`, { waitUntil: 'domcontentloaded' })
     const send = page.locator('button:has-text("Send estimate")')
     if (await send.count()) {
       await send.evaluate((element) => element.click())

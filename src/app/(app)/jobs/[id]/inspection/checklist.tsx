@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation'
 import type { InspectionItemStatus, InspectionResponseType } from '@prisma/client'
 import { cn } from '@/lib/cn'
 import { formatCents } from '@/lib/money'
+import { quotedKey } from '@/lib/estimate-presentation'
 import {
   RESPONSE_SETS,
   STATUS_LABELS,
@@ -209,7 +210,7 @@ export function InspectionChecklist({
    */
   function toggleRemedy(item: ChecklistItem, remedy: RemedyOption) {
     setError(null)
-    const keys = remedy.targetItemIds.map((id) => `${remedy.tier}:${id}`)
+    const keys = remedy.targetItemIds.map((id) => quotedKey(remedy.optionName, id))
     const added = isRemedyQuoted(remedy, quotedSet)
 
     startTransition(async () => {
@@ -364,9 +365,12 @@ function ChecklistRow({
 
   const tiers = new Set(remedies.map((remedy) => remedy.tier))
   const hasFullSet = tiers.has('GOOD') && tiers.has('BETTER') && tiers.has('BEST')
-  // Once all three tiers are on the estimate there is nothing left for the
-  // one-tap button to do, and offering it again invites a second tap that
-  // looks like it failed.
+  // A shortcut for companies that sell in tiers, offered below the individual
+  // services rather than above them: most findings have one right answer, and
+  // a technician should not have to invent two more to use this screen.
+  //
+  // Once all three are on the estimate there is nothing left for it to do, and
+  // offering it again invites a second tap that looks like it failed.
   const fullSetQuoted =
     hasFullSet &&
     remedies
@@ -428,18 +432,6 @@ function ChecklistRow({
             Add to estimate
           </p>
 
-          {hasFullSet && !fullSetQuoted ? (
-            <Button
-              type="button"
-              size="sm"
-              fullWidth
-              icon={<PlusIcon />}
-              onClick={onAddTiered}
-            >
-              Add Good / Better / Best
-            </Button>
-          ) : null}
-
           <div className="flex flex-wrap gap-1.5">
             {remedies.map((remedy) => {
               // Already on the estimate — established from the estimate
@@ -486,6 +478,19 @@ function ChecklistRow({
               )
             })}
           </div>
+
+          {hasFullSet && !fullSetQuoted ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              fullWidth
+              icon={<PlusIcon />}
+              onClick={onAddTiered}
+            >
+              Build Options · Good / Better / Best
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
