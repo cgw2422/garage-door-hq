@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import type { PriceBookCategory } from '@prisma/client'
 import { requireSession } from '@/lib/session'
+import { roleCan } from '@/lib/rbac'
 import { formatCents } from '@/lib/money'
 import { formatDate } from '@/server/jobs/queries'
 import { PageBody, PageHeader } from '@/components/app/page-header'
@@ -116,6 +117,7 @@ export default async function InventoryPage({
     (level) => level.minQuantity.greaterThan(0) && level.quantity.lessThanOrEqualTo(level.minQuantity),
   )
 
+  const canSeeMoney = roleCan(session.role, 'reports:financial')
   const totalValueCents = visible.reduce(
     (sum, level) => sum + Number(level.quantity.toString()) * level.priceBookItem.costCents,
     0,
@@ -125,7 +127,14 @@ export default async function InventoryPage({
     <>
       <PageHeader
         title={activeLocation.name}
-        subtitle={`${visible.length} parts · ${formatCents(totalValueCents, { currency: session.currency, showCents: false })} at cost`}
+        // What the truck is worth at cost is the company's money, not a
+        // number a technician needs to do the job. They see the parts either
+        // way; only the valuation is held back.
+        subtitle={
+          canSeeMoney
+            ? `${visible.length} parts · ${formatCents(totalValueCents, { currency: session.currency, showCents: false })} at cost`
+            : `${visible.length} parts`
+        }
         action={
           <ButtonLink
             href={`/inventory/add?location=${activeLocation.id}`}

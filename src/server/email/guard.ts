@@ -104,6 +104,14 @@ export function guardOutbound(driver: EmailDriver): EmailDriver {
       const env = environment()
       if (env.isProduction) return driver.send(message)
 
+      // A driver that reports itself unconfigured is the console one: it
+      // writes the message to the log and delivers it nowhere. There is
+      // nothing to protect anyone from, and holding it back would only break
+      // local development and the end-to-end run, both of which read the
+      // message back out of the log. The gate is for drivers that can
+      // actually reach an inbox.
+      if (!driver.configured) return driver.send(message)
+
       const label = environmentLabel()
       const decision = decideOutbound(message.to.email, {
         isProduction: false,

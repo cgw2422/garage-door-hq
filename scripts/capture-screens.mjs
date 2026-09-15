@@ -7,7 +7,7 @@
  *
  * Usage:  npm run db:seed && node scripts/capture-screens.mjs [baseUrl]
  */
-import { chromium } from 'playwright'
+import { launchChromium } from './browser.mjs'
 import { mkdir } from 'node:fs/promises'
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -129,7 +129,7 @@ const run = async () => {
   await withPrisma((prisma) =>
     prisma.rateLimit.deleteMany({ where: { key: { startsWith: 'login:' } } }),
   )
-  const browser = await chromium.launch({ executablePath: findChromium() })
+  const browser = await launchChromium({ executablePath: findChromium() })
 
   // ---------------------------------------------------------------- phone
   const phone = await browser.newContext(PHONE)

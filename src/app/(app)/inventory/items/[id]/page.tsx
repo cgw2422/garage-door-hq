@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { requirePermission } from '@/lib/session'
+import { roleCan } from '@/lib/rbac'
 import { formatCents } from '@/lib/money'
 import { formatDate } from '@/server/jobs/queries'
 import { formatSpringSize, formatWind } from '@/lib/measure'
@@ -71,7 +72,11 @@ export default async function InventoryItemPage({
         <Card>
           <DataGrid>
             <DataPoint label="Sell price" value={formatCents(item.priceCents, { currency: session.currency })} />
-            <DataPoint label="Your cost" value={formatCents(item.costCents, { currency: session.currency })} />
+            {/* The margin is the owner's business; the sell price is what a
+                technician needs in a driveway. */}
+            {roleCan(session.role, 'reports:financial') ? (
+              <DataPoint label="Your cost" value={formatCents(item.costCents, { currency: session.currency })} />
+            ) : null}
             <DataPoint label="Used in 30 days" value={<span className="num">{used30}</span>} />
             <DataPoint label="Supplier" value={item.supplier ?? '—'} />
           </DataGrid>

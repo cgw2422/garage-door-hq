@@ -25,7 +25,8 @@
     "e2e": "node scripts/e2e-flow.mjs",
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:health": "node scripts/health-check.mjs",
-    "check:secrets": "node scripts/scan-secrets.mjs"
+    "check:secrets": "node scripts/scan-secrets.mjs",
+    "adversarial": "node scripts/adversarial.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -37,7 +37,7 @@
  * link from a localhost address in production — correct on a deployment, and
  * exactly wrong here, where localhost is the address.
  */
-import { chromium } from 'playwright'
+import { launchChromium } from './browser.mjs'
 import { PrismaClient } from '@prisma/client'
 import { createHmac } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
@@ -283,7 +283,7 @@ const run = async () => {
   await clearOwnRateLimitWindows()
   await ensureAffiliate()
 
-  const browser = await chromium.launch({ executablePath: findChromium() })
+  const browser = await launchChromium({ executablePath: findChromium() })
   const context = await browser.newContext(PHONE)
   const page = await context.newPage()
   page.on('pageerror', (error) => console.warn(`     [browser error] ${error.message}`))

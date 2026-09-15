@@ -142,9 +142,17 @@ export default async function PriceBookPage({
                               <span className="num text-[0.9375rem] font-bold text-ink">
                                 {formatCents(item.priceCents, { currency: session.currency })}
                               </span>
+                              {/*
+                                What the company pays is not what a technician
+                                needs to sell. They read this catalog so they
+                                can build an estimate — the price is the point;
+                                the margin is the owner's business, and an
+                                employee who moves to a competitor should not
+                                take the supplier terms with them.
+                              */}
                               {item.archivedAt ? (
                                 <Chip tone="neutral">Archived</Chip>
-                              ) : item.costCents > 0 ? (
+                              ) : canWrite && item.costCents > 0 ? (
                                 <span className="num text-xs text-ink-subtle">
                                   cost {formatCents(item.costCents, { currency: session.currency })}
                                 </span>

@@ -195,11 +195,11 @@ describe('the outbound email gate', () => {
 })
 
 describe('the guarded driver', () => {
-  function recordingDriver() {
+  function recordingDriver(configured = true) {
     const sent: OutboundEmail[] = []
     const driver: EmailDriver = {
       name: 'recording',
-      configured: true,
+      configured,
       async send(message) {
         sent.push(message)
         return { accepted: true, providerMessageId: 'id-1' }
@@ -215,6 +215,24 @@ describe('the guarded driver', () => {
     html: '<p>hello</p>',
     text: 'hello',
   }
+
+  /**
+   * The console driver writes to the log and delivers nowhere, so there is
+   * nobody to protect from it — and holding it back would break local
+   * development and the end-to-end run, which both read the message back out
+   * of that log.
+   */
+  it('leaves a driver that cannot reach an inbox alone', async () => {
+    setEnv({ APP_ENV: 'staging', STAGING_EMAIL_REDIRECT_TO: undefined })
+    const { driver, sent } = recordingDriver(false)
+
+    const result = await guardOutbound(driver).send(message)
+
+    expect(result.accepted).toBe(true)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.to.email).toBe('homeowner@real.test')
+    expect(sent[0]!.subject).toBe('Your estimate is ready')
+  })
 
   it('passes production traffic straight through, untouched', async () => {
     setEnv({ APP_ENV: 'production' })
