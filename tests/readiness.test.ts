@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   AUTH_NOT_CONFIGURED,
   authSecretConfigured,
@@ -17,7 +17,18 @@ import {
  * sentence is replaced by the name of the variable to set.
  */
 
-const KEYS = ['AUTH_SECRET', 'APP_URL', 'NEXT_PUBLIC_APP_URL', 'AUTH_URL', 'NODE_ENV'] as const
+// `ALLOW_LOCAL_APP_URL` belongs here even though no test below sets it: it is
+// what makes a localhost address acceptable in production, so leaving it out
+// of the reset meant the test for "refuses localhost" passed only where that
+// variable happened to be unset.
+const KEYS = [
+  'AUTH_SECRET',
+  'APP_URL',
+  'NEXT_PUBLIC_APP_URL',
+  'AUTH_URL',
+  'NODE_ENV',
+  'ALLOW_LOCAL_APP_URL',
+] as const
 const original = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]))
 
 function setEnv(values: Partial<Record<(typeof KEYS)[number], string | undefined>>) {
@@ -26,6 +37,16 @@ function setEnv(values: Partial<Record<(typeof KEYS)[number], string | undefined
     else process.env[key] = value
   }
 }
+
+/**
+ * Each test states its whole environment rather than inheriting one. CI sets
+ * `APP_URL`, which the readiness check prefers over `NEXT_PUBLIC_APP_URL`, so a
+ * test that named only the latter was checking the runner's configuration
+ * instead of its own.
+ */
+beforeEach(() => {
+  for (const key of KEYS) delete process.env[key]
+})
 
 afterEach(() => {
   setEnv(original)
