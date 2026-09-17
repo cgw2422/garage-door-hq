@@ -74,6 +74,10 @@ const PUBLIC_ACTIONS: Record<string, string> = {
     'The customer paying an invoice has no account; the opaque single-document token is the credential.',
   'src/app/(auth)/reset/[token]/actions.ts: completeResetAction':
     'Someone who has forgotten their password cannot be signed in. The single-use hashed reset token is the credential, guessing it is rate limited, and using it invalidates every session the account had.',
+  'src/app/(present)/present/actions.ts: signInPresentationAction':
+    'The customer signing on the technician\u2019s handed-over device is not the technician, and the technician\u2019s session is deliberately suspended for the duration. The credential is the short-lived presentation token in its own cookie, which names exactly one estimate; the estimate id comes from that row rather than from the form, so a tampered payload can only ever sign what is on screen.',
+  'src/app/(present)/present/actions.ts: endPresentationAction':
+    'Ending a presentation cannot require the session it suspends. It is gated on the technician\u2019s own password, verified against the user named by the presentation row, and rate limited so a device left with someone patient cannot be guessed into.',
 }
 
 function walk(dir: string, matcher: (path: string) => boolean): string[] {

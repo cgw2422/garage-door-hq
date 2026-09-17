@@ -363,12 +363,17 @@ export function EstimateBuilder({
                   </SubmitButton>
                 </form>
                 {hasLines ? (
-                  <a
-                    href="#send-to-customer"
-                    className="block py-1 text-center text-sm font-semibold text-brand-600"
-                  >
-                    Send instead
-                  </a>
+                  <>
+                    <p className="text-center text-xs leading-relaxed text-ink-subtle">
+                      Locks the rest of the app until you unlock it with your password.
+                    </p>
+                    <a
+                      href="#send-to-customer"
+                      className="block py-1 text-center text-sm font-semibold text-brand-600"
+                    >
+                      Send instead
+                    </a>
+                  </>
                 ) : null}
               </>
             )}

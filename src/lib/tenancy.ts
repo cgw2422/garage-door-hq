@@ -56,6 +56,7 @@ const TENANT_MODELS = new Set<string>([
   'WebhookEvent',
   'Subscription',
   'Referral',
+  'PresentationSession',
 ])
 
 /**

@@ -67,16 +67,17 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships     Membership[]
-  passwordResets  PasswordResetToken[]
-  assignedJobs    Job[]                  @relation("JobAssignee")
-  auditLogs       AuditLog[]
-  inventoryMoves  InventoryTransaction[] @relation("InventoryActor")
-  homeLocations   InventoryLocation[]    @relation("LocationAssignee")
-  notes           Note[]
-  affiliate       Affiliate?
-  communications  CommunicationLog[]
-  sentInvitations Invitation[]           @relation("InvitationInviter")
+  memberships          Membership[]
+  passwordResets       PasswordResetToken[]
+  assignedJobs         Job[]                  @relation("JobAssignee")
+  auditLogs            AuditLog[]
+  inventoryMoves       InventoryTransaction[] @relation("InventoryActor")
+  homeLocations        InventoryLocation[]    @relation("LocationAssignee")
+  notes                Note[]
+  affiliate            Affiliate?
+  communications       CommunicationLog[]
+  sentInvitations      Invitation[]           @relation("InvitationInviter")
+  presentationSessions PresentationSession[]  @relation("PresentationTechnician")
 
   @@index([platformRole])
 }
@@ -197,6 +198,7 @@ model Organization {
   communications        CommunicationLog[]
   paymentAccount        PaymentAccount?
   webhookEvents         WebhookEvent[]
+  presentationSessions  PresentationSession[]
 }
 
 model Membership {
@@ -1162,16 +1164,17 @@ model Estimate {
   updatedAt  DateTime  @updatedAt
   archivedAt DateTime?
 
-  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  job            Job?              @relation(fields: [jobId], references: [id], onDelete: SetNull)
-  customer       Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  options        EstimateOption[]  @relation("EstimateOptions")
-  selectedOption EstimateOption?   @relation("EstimateSelectedOption", fields: [selectedOptionId], references: [id], onDelete: SetNull)
-  versions       EstimateVersion[]
-  signatures     Signature[]
-  photos         Photo[]
-  invoices       Invoice[]
-  portalLinks    PortalLink[]
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job                  Job?                  @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  customer             Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  options              EstimateOption[]      @relation("EstimateOptions")
+  selectedOption       EstimateOption?       @relation("EstimateSelectedOption", fields: [selectedOptionId], references: [id], onDelete: SetNull)
+  versions             EstimateVersion[]
+  signatures           Signature[]
+  photos               Photo[]
+  invoices             Invoice[]
+  portalLinks          PortalLink[]
+  presentationSessions PresentationSession[]
 
   @@unique([organizationId, number])
   @@unique([organizationId, displayNumber])
@@ -2109,4 +2112,56 @@ model AuditLog {
   @@index([organizationId, createdAt])
   @@index([entityType, entityId])
   @@index([actorUserId, createdAt])
+}
+
+/// Handing the technician's own device to a homeowner.
+///
+/// A repair is sold standing in a driveway, so the customer reviews and signs
+/// on the phone that is already there. That phone is signed in as the
+/// technician, and for the two minutes it is in someone else's hands the
+/// technician's whole business — every customer, every price, every margin —
+/// is one typed URL away.
+///
+/// Hiding the navigation does not address that, and neither does intercepting
+/// the back button. This row does: while one is live, the technician's session
+/// is suspended for every route except the presentation itself, and the
+/// presentation is resolved from its own token rather than from their session.
+/// Ending it takes the technician's password, which the customer does not have.
+model PresentationSession {
+  id String @id @default(uuid())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// The one document this context can see. Nothing else is reachable.
+  estimateId String
+  estimate   Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  /// Whose device this is, and therefore whose session is suspended.
+  technicianUserId String
+  technician       User   @relation("PresentationTechnician", fields: [technicianUserId], references: [id], onDelete: Cascade)
+
+  /// Only the SHA-256 of the token is stored, like every other credential here.
+  tokenHash String @unique
+
+  startedAt   DateTime  @default(now())
+  /// Short by design: a presentation is minutes, not a working day.
+  expiresAt   DateTime
+  endedAt     DateTime?
+  /// TECHNICIAN | SIGNED | SUPERSEDED | EXPIRED — for the audit trail.
+  endedReason String?
+
+  /// Set when the customer signs, so the closing screen can say what for.
+  signedAt       DateTime?
+  signedOptionId String?
+
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([technicianUserId, endedAt])
+  @@index([organizationId, startedAt])
+  @@index([expiresAt])
 }

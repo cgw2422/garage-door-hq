@@ -159,7 +159,10 @@ export const getSession = cache(async (): Promise<AppSession | null> => {
  */
 export async function requireSession(): Promise<AppSession> {
   const session = await getSession()
-  if (session) return session
+  if (session) {
+    await assertNotPresenting(session.userId)
+    return session
+  }
 
   const user = await getAuthenticatedUser()
   if (!user) redirect('/login')
@@ -245,6 +248,25 @@ export async function requireActiveSubscription(
 export async function requirePlatformStaff(): Promise<AuthenticatedUser> {
   const user = await getAuthenticatedUser()
   if (!user) redirect('/login')
+  await assertNotPresenting(user.userId)
   if (!isPlatformStaff(user.platformRole)) redirect('/today')
   return user
+}
+
+/**
+ * The authoritative half of Presentation Mode's lock.
+ *
+ * While a technician has handed their device to a customer, their session is
+ * suspended everywhere except the presentation itself. This is checked here —
+ * at the one function every authenticated page, layout and action already
+ * calls — rather than only in middleware, because middleware can read a cookie
+ * and a cookie is something a person holding the phone could clear. This reads
+ * the row, so clearing it changes nothing.
+ *
+ * Importing lazily keeps the presentation service (and Prisma) out of modules
+ * that only want the session's types.
+ */
+async function assertNotPresenting(userId: string): Promise<void> {
+  const { presentationLockFor } = await import('@/server/presentations/service')
+  if (await presentationLockFor(userId)) redirect('/present')
 }

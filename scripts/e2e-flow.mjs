@@ -209,6 +209,21 @@ async function clearOwnRateLimitWindows() {
   )
 }
 
+/**
+ * A run that stops inside Presentation Mode leaves the technician's session
+ * suspended until it times out — correctly, since that is the whole point of
+ * the lock. It is still nothing to do with the next run, so this closes any
+ * that a previous attempt abandoned.
+ */
+async function clearAbandonedPresentations() {
+  await withPrisma((prisma) =>
+    prisma.presentationSession.updateMany({
+      where: { endedAt: null },
+      data: { endedAt: new Date(), endedReason: 'SUPERSEDED' },
+    }),
+  )
+}
+
 /** One short-lived client per query; the script is not a long-running app. */
 async function withPrisma(fn) {
   const prisma = new PrismaClient()
@@ -281,6 +296,7 @@ function stripeSignature(body, secret) {
 const run = async () => {
   await mkdir(SHOTS, { recursive: true })
   await clearOwnRateLimitWindows()
+  await clearAbandonedPresentations()
   await ensureAffiliate()
 
   const browser = await launchChromium({ executablePath: findChromium() })
@@ -592,7 +608,7 @@ const run = async () => {
     // and the homeowner sees the company's estimate with none of the
     // business's own numbers on it.
     await page.click('button:has-text("Present to Customer")')
-    await page.waitForURL(/\/present\/[0-9a-f-]{36}$/, { timeout: 20_000 })
+    await page.waitForURL(/\/present$/, { timeout: 20_000 })
 
     const handoverText = await bodyText(page)
     expectText(handoverText, 'Ready to show your customer', 'No handover screen before presenting')
@@ -619,7 +635,19 @@ const run = async () => {
     await shot(page, '11c-presentation-options')
 
     // Leaving without signing, because this customer wants it emailed instead.
-    // Presenting changes nothing about the document.
+    // Presenting changes nothing about the document — but it does suspend the
+    // technician's session, so getting back to work means the password.
+    // Back to the top first: a full-page screenshot just above leaves the page
+    // scrolled, and the technician's exit lives in the masthead.
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await page.waitForTimeout(300)
+    await page.locator('button:has-text("Technician")').first().click()
+    await page.waitForTimeout(400)
+    await page.fill('input[type="password"]', PASSWORD)
+    await page.click('button:has-text("Unlock")')
+    await page.waitForURL((url) => !url.pathname.startsWith('/present'), { timeout: 20_000 })
+    log('Ended Presentation Mode with the technician password, back in the app')
+
     // --- Email the estimate to the customer ---------------------------------
     await page.goto(estimateUrl, { waitUntil: 'domcontentloaded' })
 

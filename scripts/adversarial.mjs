@@ -53,6 +53,20 @@ function fail(message) {
 
 const breaches = []
 
+/** Open the technician's exit and try a password. */
+async function unlock(page, password) {
+  const opener = page
+    .locator('button:has-text("Technician"), button:has-text("Not yet")')
+    .first()
+  if (await opener.count()) {
+    await opener.click()
+    await page.waitForTimeout(400)
+  }
+  await page.fill('input[type="password"]', password)
+  await page.click('button:has-text("Unlock")')
+  await page.waitForTimeout(1800)
+}
+
 async function bodyText(page) {
   try {
     return (await page.locator('body').innerText()).toLowerCase()
@@ -168,6 +182,13 @@ async function clearOwnRateLimitWindows() {
         key: { startsWith: scope },
       })),
     },
+  })
+  // A previous run that stopped inside Presentation Mode leaves a technician's
+  // session suspended until it times out. Correct, and nothing to do with this
+  // run.
+  await prisma.presentationSession.updateMany({
+    where: { endedAt: null },
+    data: { endedAt: new Date(), endedReason: 'SUPERSEDED' },
   })
 }
 
@@ -495,7 +516,20 @@ async function run() {
     // -------------------------------------------- presentation mode
     console.log('\nCustomer Presentation Mode, on the technician’s own device:')
     if (aEstimate) {
-      await pageA.goto(`${BASE}/present/${aEstimate.id}`, { waitUntil: 'domcontentloaded' })
+      // Enter the way a technician does, from the estimate screen, so the
+      // presentation session and its cookie are created by the real path.
+      await pageA.goto(`${BASE}/estimates/${aEstimate.id}`, { waitUntil: 'domcontentloaded' })
+      const presentButton = pageA
+        .locator('button:has-text("Present to Customer"), button:has-text("Present on this device")')
+        .first()
+      if (!(await presentButton.count())) {
+        fail('the estimate screen offers no way to present on this device')
+      } else {
+        await presentButton.click()
+        await pageA.waitForURL(/\/present$/, { timeout: 30_000 })
+        pass('Present to Customer opens a presentation')
+      }
+
       const handover = await bodyText(pageA)
       if (handover.includes('ready to show your customer')) {
         pass('opens on a handover screen, not straight into the estimate')
@@ -511,9 +545,7 @@ async function run() {
 
       const presented = await bodyText(pageA)
       for (const secret of ['cost', 'margin', 'gross profit', 'in stock', 'sku', 'price book']) {
-        if (presented.includes(secret)) {
-          fail(`presentation mode shows "${secret}"`)
-        }
+        if (presented.includes(secret)) fail(`presentation mode shows "${secret}"`)
       }
       pass('no cost, margin, stock, SKU or price-book wording on screen')
 
@@ -523,16 +555,110 @@ async function run() {
         pass('no navigation back into the business')
       }
 
-      // The back gesture, which is what a customer holding the phone will do.
+      /*
+       * The part that matters.
+       *
+       * The phone is in a customer's hands and it is signed in as the
+       * technician. Every one of these is a URL they could type, and every one
+       * of them has to come back to the presentation rather than to the
+       * business.
+       */
+      for (const [path, label] of [
+        ['/today', 'the dashboard'],
+        ['/customers', 'the customer list'],
+        [`/customers/${A.customerId}`, 'a customer record'],
+        [`/jobs/${A.jobId}`, 'the job, with its private notes'],
+        ['/money', 'the money dashboard'],
+        ['/settings', 'company settings'],
+        ['/settings/price-book', 'the price book'],
+        ['/settings/team', 'the team screen'],
+        ['/inventory', 'the truck'],
+        ['/search?q=a', 'search'],
+        [`/estimates/${aEstimate.id}`, "the technician's own estimate editor"],
+        [`/api/documents/estimates/${aEstimate.id}/pdf`, 'the internal estimate PDF'],
+        ['/admin', 'platform admin'],
+      ]) {
+        await pageA.goto(`${BASE}${path}`, { waitUntil: 'domcontentloaded' })
+        const landed = new URL(pageA.url()).pathname
+        if (landed === '/present') {
+          pass(`typing ${label} comes back to the presentation`)
+        } else {
+          fail(`a customer holding the phone reached ${label} (${landed})`)
+        }
+      }
+
+      // The back gesture, which is what a customer will actually do.
       await pageA.goBack()
       await pageA.waitForTimeout(800)
-      const afterBack = new URL(pageA.url()).pathname
-      if (afterBack.startsWith('/present/')) {
+      if (new URL(pageA.url()).pathname === '/present') {
         pass('a back gesture stays inside the presentation')
       } else {
-        fail(`a back gesture left presentation mode for ${afterBack}`)
+        fail(`a back gesture left presentation mode for ${new URL(pageA.url()).pathname}`)
       }
       await pageA.screenshot({ path: `${SHOTS}/adv-presentation.png`, fullPage: true })
+
+      // Leaving takes the technician's password. Everything a customer could
+      // tap is on the way to a box they cannot fill in.
+      await unlock(pageA, 'not-the-password')
+      if (new URL(pageA.url()).pathname === '/present') {
+        pass('a wrong password does not unlock the device')
+      } else {
+        fail('a wrong password left presentation mode')
+      }
+
+      await unlock(pageA, PASSWORD)
+      await pageA.waitForURL((url) => !url.pathname.startsWith('/present'), { timeout: 30_000 })
+      pass("the technician's own password hands the app back")
+
+      await pageA.goto(`${BASE}/today`, { waitUntil: 'domcontentloaded' })
+      if (new URL(pageA.url()).pathname === '/today') {
+        pass('the technician can work again once the presentation is over')
+      } else {
+        fail('the technician is still locked out after ending the presentation')
+      }
+
+      /*
+       * Clearing the presentation cookie is the obvious escape, so it gets its
+       * own presentation to try it on. The lock is keyed on the technician's
+       * user id in the database, not on the cookie, so deleting it changes
+       * nothing except which screen they land on.
+       */
+      await pageA.goto(`${BASE}/estimates/${aEstimate.id}`, { waitUntil: 'domcontentloaded' })
+      const again = pageA
+        .locator('button:has-text("Present to Customer"), button:has-text("Present on this device")')
+        .first()
+      if (await again.count()) {
+        await again.click()
+        await pageA.waitForURL(/\/present$/, { timeout: 30_000 })
+
+        await contextA.clearCookies({ name: 'gdhq_presentation' })
+        await pageA.goto(`${BASE}/today`, { waitUntil: 'domcontentloaded' })
+        if (new URL(pageA.url()).pathname === '/present') {
+          pass('clearing the presentation cookie does not lift the lock')
+        } else {
+          fail(`clearing the presentation cookie escaped to ${new URL(pageA.url()).pathname}`)
+        }
+
+        const stranded = await bodyText(pageA)
+        if (stranded.includes('hand the device back')) {
+          pass('and the customer still sees only "hand the device back"')
+        } else {
+          fail('a cleared cookie showed something other than the closing screen')
+        }
+
+        // Recovering from that still takes the password — a cleared cookie
+        // must not make a device in the wrong hands easier to get into.
+        await unlock(pageA, 'still-not-the-password')
+        if (new URL(pageA.url()).pathname === '/present') {
+          pass('recovering from a lost cookie still needs the password')
+        } else {
+          fail('a lost cookie let the app back without a password')
+        }
+
+        await unlock(pageA, PASSWORD)
+        await pageA.waitForURL((url) => !url.pathname.startsWith('/present'), { timeout: 30_000 })
+        pass('and with the right password the technician is back at work')
+      }
     }
 
     // ------------------------------------------------------ desktop

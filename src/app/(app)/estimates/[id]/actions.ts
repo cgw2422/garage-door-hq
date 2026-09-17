@@ -1,10 +1,13 @@
 'use server'
 
+import { cookies, headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { requireActiveSubscription } from '@/lib/session'
 import { failure, parseForm, type FormState, guarded } from '@/lib/form'
+import { PRESENTATION_COOKIE } from '@/lib/presentation-cookie'
+import { PRESENTATION_TTL_SECONDS, startPresentation } from '@/server/presentations/service'
 import {
   addCatalogItemToEstimate,
   addPackageToEstimate,
@@ -145,6 +148,35 @@ export async function setTaxRateAction(_prev: FormState, formData: FormData): Pr
 export async function presentEstimateAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const gate = await guarded(() => requireActiveSubscription('estimate:write'))
   if (!gate.ok) return gate.state
+  const session = gate.value
   const estimateId = String(formData.get('estimateId') ?? '')
-  redirect(`/present/${estimateId}`)
+
+  // Opening a presentation suspends this technician's session everywhere else
+  // until they end it with their password. That is the whole point: the device
+  // is about to be in someone else's hands.
+  let token: string
+  try {
+    const requestHeaders = await headers()
+    const started = await startPresentation(session, {
+      estimateId,
+      ipAddress: requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      userAgent: requestHeaders.get('user-agent'),
+    })
+    token = started.token
+  } catch (error) {
+    return failure(error, formData)
+  }
+
+  const jar = await cookies()
+  jar.set({
+    name: PRESENTATION_COOKIE,
+    value: token,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: PRESENTATION_TTL_SECONDS,
+  })
+
+  redirect('/present')
 }

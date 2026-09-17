@@ -1,7 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useMemo, useState, useTransition } from 'react'
 import type { EstimateTier } from '@prisma/client'
 import { cn } from '@/lib/cn'
 import { formatCents } from '@/lib/money'
@@ -9,7 +8,11 @@ import { badgeFor, optionsHeading, type OptionLayout } from '@/lib/estimate-pres
 import { Alert } from '@/components/ui/alert'
 import { SignaturePad } from '@/components/app/signature-pad'
 import { CheckIcon } from '@/components/ui/icons'
-import { signInPersonAction } from './actions'
+import {
+  endPresentationAction,
+  recoverPresentationAction,
+  signInPresentationAction,
+} from './actions'
 
 export interface PresentedOption {
   id: string
@@ -34,22 +37,25 @@ interface Company {
  * Customer Presentation Mode.
  *
  * A technician taps Present, hands over the phone, and a homeowner who has
- * never seen this software decides what to do about their garage door. That
- * is the whole design brief: big type, big targets, the company's name at the
- * top, and nothing on screen that belongs to the business rather than to the
- * customer.
+ * never seen this software decides what to do about their garage door. Big
+ * type, big targets, the company's name at the top, and nothing on screen that
+ * belongs to the business rather than to the customer.
  *
  * The number of options decides the shape. One option is a recommendation to
  * approve, not a tier to compare — it never gets labelled "Good", because
  * there is nothing for it to be better than. Two are a choice. Three, if the
  * company sells that way, are Good, Better and Best. Nothing is invented to
- * fill a layout.
+ * fill a layout, and no technician is ever asked to make up a second option to
+ * get past this screen.
+ *
+ * What keeps the business out of reach is not this component. It is that the
+ * technician's session is suspended while this is open, and this page was
+ * resolved from a token that names one estimate. The design can therefore be
+ * about the customer rather than about defending anything.
  */
 type Stage = 'ready' | 'choose' | 'approve' | 'done'
 
 export function CustomerPresentation({
-  estimateId,
-  jobId,
   estimateNumber,
   currency,
   company,
@@ -66,8 +72,6 @@ export function CustomerPresentation({
   expiresAt,
   alreadySigned,
 }: {
-  estimateId: string
-  jobId: string | null
   estimateNumber: string
   currency: string
   company: Company
@@ -82,9 +86,8 @@ export function CustomerPresentation({
   taxRateBps: number
   termsText: string | null
   expiresAt: string | null
-  alreadySigned: { signerName: string; signedAt: string; optionId: string | null } | null
+  alreadySigned: { signerName: string; optionId: string | null } | null
 }) {
-  const router = useRouter()
   const [stage, setStage] = useState<Stage>(alreadySigned ? 'done' : 'ready')
   const [chosenId, setChosenId] = useState<string | null>(
     alreadySigned?.optionId ?? (options.length === 1 ? (options[0]?.id ?? null) : null),
@@ -93,37 +96,17 @@ export function CustomerPresentation({
   const [signature, setSignature] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
-  const [approvedTotal, setApprovedTotal] = useState<number | null>(
-    alreadySigned ? (options.find((o) => o.id === alreadySigned.optionId)?.totalCents ?? null) : null,
-  )
 
   const chosen = useMemo(
     () => options.find((option) => option.id === chosenId) ?? null,
     [options, chosenId],
   )
 
-  // Keep Back inside the presentation once the device has been handed over.
-  //
-  // Everything a customer must not see is already absent from this page — the
-  // costs and margins were never loaded. The browser is the remaining hole:
-  // one Back gesture lands on the technician's estimate editor, which has all
-  // of it. So while the customer is holding the device, a back gesture moves
-  // between the stages of the presentation instead of leaving it.
-  //
-  // This is a guard, not a cage. Someone determined can still type a URL, and
-  // the real control is that the technician is standing next to them. What it
-  // fixes is the accident: a homeowner swiping back out of habit and finding
-  // the company's cost on a part.
-  useHistoryGuard(stage !== 'ready', () => {
-    if (stage === 'approve') setStage('choose')
-  })
-
   function approve() {
     if (!chosen || !signature || pending) return
     setError(null)
     startTransition(async () => {
-      const result = await signInPersonAction({
-        estimateId,
+      const result = await signInPresentationAction({
         optionId: chosen.id,
         signerName: signerName.trim(),
         signatureDataUrl: signature,
@@ -132,7 +115,6 @@ export function CustomerPresentation({
         setError(result.error)
         return
       }
-      setApprovedTotal(chosen.totalCents)
       setStage('done')
     })
   }
@@ -140,7 +122,7 @@ export function CustomerPresentation({
   // --- the handover screen -------------------------------------------------
   if (stage === 'ready') {
     return (
-      <Shell company={company} bare>
+      <Shell company={company} bare exit={false}>
         <div className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center gap-7 px-6 py-12 text-center">
           <div className="space-y-3">
             <h1 className="text-[2rem] font-bold leading-tight text-ink">
@@ -148,7 +130,8 @@ export function CustomerPresentation({
             </h1>
             <p className="text-lg leading-relaxed text-ink-muted">
               Customer Presentation Mode hides your internal business information — your
-              costs, your margins, your notes and your price book.
+              costs, your margins, your notes and your price book — and locks the rest of
+              Garage Door HQ until you unlock it with your password.
             </p>
           </div>
 
@@ -160,13 +143,7 @@ export function CustomerPresentation({
             Present Estimate
           </button>
 
-          <button
-            type="button"
-            onClick={() => router.push(`/estimates/${estimateId}`)}
-            className="text-base font-semibold text-ink-muted"
-          >
-            Not yet — back to the estimate
-          </button>
+          <ExitControl label="Not yet — back to the estimate" />
         </div>
       </Shell>
     )
@@ -175,29 +152,30 @@ export function CustomerPresentation({
   // --- all set -------------------------------------------------------------
   //
   // Nothing here leads anywhere. The customer is still holding the device, so
-  // leaving the mode is a deliberate act by the technician, below.
+  // leaving is a deliberate act by the technician, with their password.
   if (stage === 'done') {
     return (
-      <Shell company={company} bare>
+      <Shell company={company} bare exit={false}>
         <div className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center gap-8 px-6 py-12 text-center">
           <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-success-50">
             <CheckIcon className="h-10 w-10 text-success-600" />
           </div>
           <div className="space-y-3">
-            <h1 className="text-[2rem] font-bold leading-tight text-ink">You&rsquo;re all set.</h1>
-            <p className="text-lg leading-relaxed text-ink-muted">
-              Your repair has been approved for{' '}
-              <span className="num font-bold text-ink">
-                {formatCents(approvedTotal ?? chosen?.totalCents ?? 0, { currency })}
-              </span>
-              .
-            </p>
-            <p className="text-lg font-semibold text-ink">
-              Please hand the device back to your technician.
+            <h1 className="text-[2.5rem] font-bold leading-tight text-ink">Approved</h1>
+            {chosen ? (
+              <p className="text-lg leading-relaxed text-ink-muted">
+                {chosen.name} ·{' '}
+                <span className="num font-bold text-ink">
+                  {formatCents(chosen.totalCents, { currency })}
+                </span>
+              </p>
+            ) : null}
+            <p className="text-xl font-semibold text-ink">
+              Please return this device to your technician.
             </p>
           </div>
 
-          <ExitToJob jobId={jobId} estimateId={estimateId} />
+          <ExitControl label="Technician: exit Presentation Mode" />
         </div>
       </Shell>
     )
@@ -387,7 +365,9 @@ export function CustomerPresentation({
                 onClick={approve}
                 className="safe-tap w-full rounded-[--radius-control] bg-success-600 px-6 py-4 text-lg font-bold text-white disabled:opacity-40 active:bg-success-700"
               >
-                {pending ? 'Approving…' : `Approve ${formatCents(chosen?.totalCents ?? 0, { currency })}`}
+                {pending
+                  ? 'Approving…'
+                  : `Approve ${formatCents(chosen?.totalCents ?? 0, { currency })}`}
               </button>
               {options.length > 1 ? (
                 <button
@@ -407,27 +387,121 @@ export function CustomerPresentation({
 }
 
 /**
- * Hold the back gesture, while it matters.
+ * Leaving, which only the technician can do.
  *
- * A pushed history entry gives the browser something to pop that is not the
- * previous page. Each pop is answered by pushing another, so the presentation
- * stays put and the caller decides what "back" should mean inside it.
+ * Two taps and then a password. The two taps keep a stray thumb from opening
+ * the form; the password is what makes this technician-only rather than
+ * merely awkward — a confirmation dialog is something a curious customer taps
+ * through, and a hidden gesture is something they discover.
+ *
+ * On success the browser is sent to the job with a full navigation rather than
+ * a client-side one, because the presentation cookie has just been cleared and
+ * the middleware needs to see that on the next request.
  */
-function useHistoryGuard(active: boolean, onBack: () => void) {
-  const handler = useCallback(onBack, [onBack])
+export function ExitControl({
+  label,
+  recover = false,
+  compact = false,
+}: {
+  label: string
+  /** The cookie is gone; end the technician's live presentation by identity. */
+  recover?: boolean
+  /** A small control in the masthead rather than a line of its own. */
+  compact?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [pending, start] = useTransition()
 
-  useEffect(() => {
-    if (!active) return
-    window.history.pushState({ present: true }, '')
+  function submit() {
+    if (pending || password.length === 0) return
+    setError(null)
+    start(async () => {
+      const result = recover
+        ? await recoverPresentationAction(password)
+        : await endPresentationAction(password)
+      if (!result.ok) {
+        setError(result.error)
+        setPassword('')
+        return
+      }
+      window.location.href = result.href
+    })
+  }
 
-    const onPopState = () => {
-      window.history.pushState({ present: true }, '')
-      handler()
-    }
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={cn(
+          'font-semibold text-ink-subtle',
+          compact ? 'px-2 py-1 text-xs' : 'mx-auto py-2 text-sm',
+        )}
+      >
+        {label}
+      </button>
+    )
+  }
 
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
-  }, [active, handler])
+  const panel = (
+    <div className="mx-auto w-full max-w-sm space-y-3 rounded-[--radius-card] border border-hairline bg-surface p-4 text-left shadow-[--shadow-card]">
+      <div>
+        <p className="text-[0.9375rem] font-bold text-ink">Technician sign-in</p>
+        <p className="mt-0.5 text-sm text-ink-muted">
+          Enter your Garage Door HQ password to unlock the app on this device.
+        </p>
+      </div>
+
+      <input
+        type="password"
+        value={password}
+        autoFocus
+        autoComplete="current-password"
+        onChange={(event) => setPassword(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') submit()
+        }}
+        className="h-12 w-full rounded-[--radius-control] border border-hairline-strong bg-surface px-3 text-base text-ink"
+        placeholder="Your password"
+      />
+
+      {error ? <Alert>{error}</Alert> : null}
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false)
+            setPassword('')
+            setError(null)
+          }}
+          className="h-12 flex-1 rounded-[--radius-control] border border-hairline-strong text-[0.9375rem] font-semibold text-ink-muted"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={pending || password.length === 0}
+          onClick={submit}
+          className="h-12 flex-1 rounded-[--radius-control] bg-ink text-[0.9375rem] font-bold text-white disabled:opacity-40"
+        >
+          {pending ? 'Unlocking…' : 'Unlock'}
+        </button>
+      </div>
+    </div>
+  )
+
+  // From the masthead the panel has to float, or it would push the customer's
+  // estimate down the page while they are reading it.
+  if (!compact) return panel
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-start justify-center bg-ink/40 px-5 pt-24">
+      {panel}
+    </div>
+  )
 }
 
 /**
@@ -440,28 +514,52 @@ function Shell({
   company,
   children,
   bare,
+  exit = true,
 }: {
   company: Company
   children: React.ReactNode
   bare?: boolean
+  /** The stages that carry their own exit turn this off. */
+  exit?: boolean
 }) {
   return (
     <div className="min-h-dvh bg-surface">
       <div
         className={cn(
-          'safe-top flex items-center justify-center gap-3 border-b border-hairline bg-surface px-5 py-4',
+          'safe-top relative flex items-center justify-center gap-3 border-b border-hairline bg-surface px-5 py-4',
           bare && 'border-b-0',
         )}
       >
+        {/*
+          The way out, on every screen.
+          
+          A technician needs to be able to stop halfway — the customer says
+          they want to think about it, or wants it emailed instead — and
+          without this the only way out of the middle of a presentation would
+          be to sign something. It is small and unremarkable rather than
+          hidden: it leads to a password box, so how visible it is changes
+          nothing about who can use it.
+        */}
+        {exit ? (
+          // Centred with flex rather than a translate: a transform on an
+          // ancestor becomes the containing block for `position: fixed` and
+          // opens its own stacking context, which would trap the unlock panel
+          // behind the estimate it is supposed to cover.
+          <div className="absolute inset-y-0 right-3 flex items-center">
+            <ExitControl label="Technician" compact />
+          </div>
+        ) : null}
         {company.logoSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={company.logoSrc} alt={company.name} className="h-9 w-auto max-w-[160px] object-contain" />
+          <img
+            src={company.logoSrc}
+            alt={company.name}
+            className="h-9 w-auto max-w-[160px] object-contain"
+          />
         ) : null}
         <div className="text-center">
           <p className="text-[1.0625rem] font-bold leading-tight text-ink">{company.name}</p>
-          {company.phone ? (
-            <p className="num text-sm text-ink-muted">{company.phone}</p>
-          ) : null}
+          {company.phone ? <p className="num text-sm text-ink-muted">{company.phone}</p> : null}
         </div>
       </div>
       {children}
@@ -500,9 +598,7 @@ function OptionCard({
         <span
           className={cn(
             'mb-2 inline-block rounded-[--radius-chip] px-2.5 py-1 text-[0.75rem] font-bold uppercase tracking-[0.1em]',
-            badge.tone === 'tier'
-              ? 'bg-navy-100 text-navy-700'
-              : 'bg-brand-600 text-white',
+            badge.tone === 'tier' ? 'bg-navy-100 text-navy-700' : 'bg-brand-600 text-white',
           )}
         >
           {badge.text}
@@ -548,50 +644,6 @@ function OptionCard({
         </ul>
       ) : null}
     </button>
-  )
-}
-
-/**
- * Leaving the mode, on purpose.
- *
- * Two taps rather than one, because the customer is holding the device when
- * this screen appears and a single stray tap should not open the company's
- * books in their hands.
- */
-function ExitToJob({ jobId, estimateId }: { jobId: string | null; estimateId: string }) {
-  const router = useRouter()
-  const [confirming, setConfirming] = useState(false)
-
-  if (!confirming) {
-    return (
-      <button
-        type="button"
-        onClick={() => setConfirming(true)}
-        className="mx-auto text-sm font-semibold text-ink-subtle"
-      >
-        Technician: exit presentation
-      </button>
-    )
-  }
-
-  return (
-    <div className="space-y-2">
-      <p className="text-sm text-ink-muted">This shows your business information again.</p>
-      <button
-        type="button"
-        onClick={() => router.push(jobId ? `/jobs/${jobId}` : `/estimates/${estimateId}`)}
-        className="safe-tap w-full rounded-[--radius-control] border border-hairline-strong bg-surface px-6 py-4 text-base font-bold text-ink"
-      >
-        Exit Presentation Mode
-      </button>
-      <button
-        type="button"
-        onClick={() => setConfirming(false)}
-        className="py-1 text-sm font-semibold text-ink-subtle"
-      >
-        Stay here
-      </button>
-    </div>
   )
 }
 

@@ -24,7 +24,9 @@ export function EnvironmentBanner() {
     <div
       role="status"
       aria-label={`${environmentLabel()} environment`}
-      className="safe-top sticky top-0 z-50 flex items-center justify-center gap-2 bg-[#7A4B00] px-3 py-1 text-center text-[0.6875rem] font-bold uppercase tracking-[0.18em] text-[#FFD98A]"
+      // Nothing here is clickable, and a status stripe that swallows taps
+      // meant for the header under it is worse than no stripe at all.
+      className="safe-top pointer-events-none sticky top-0 z-50 flex items-center justify-center gap-2 bg-[#7A4B00] px-3 py-1 text-center text-[0.6875rem] font-bold uppercase tracking-[0.18em] text-[#FFD98A]"
     >
       <span
         aria-hidden="true"

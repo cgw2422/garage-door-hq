@@ -30,6 +30,12 @@ export const RATE_LIMITS = {
   /** Anything that spends money, stock, or someone else's trust. */
   sensitiveMutation: { limit: 60, windowSeconds: 60 },
   upload: { limit: 120, windowSeconds: 300 },
+  /**
+   * Guessing a technician's password to get out of Presentation Mode, on a
+   * device that has been handed over. Tight, because a legitimate technician
+   * types theirs once and gets it right.
+   */
+  presentationExit: { limit: 8, windowSeconds: 600 },
   invite: { limit: 20, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>
 
