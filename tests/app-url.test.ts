@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { AppUrlError, appBaseUrl, appBaseUrlUnchecked } from '@/lib/app-url'
 import { userMessage } from '@/lib/errors'
 
@@ -26,6 +26,21 @@ function setEnv(values: Partial<Record<(typeof KEYS)[number], string | undefined
     else process.env[key] = value
   }
 }
+
+/**
+ * Start each test from *no* address configured.
+ *
+ * These tests name the variable they care about and used to leave the others
+ * as they found them, which is fine on a laptop where none of them are set and
+ * wrong everywhere else. CI sets `APP_URL`, which `appBaseUrl` prefers, so a
+ * test setting only `NEXT_PUBLIC_APP_URL` was reading CI's value and not its
+ * own — and the suite that exists to catch a misconfigured address was itself
+ * misconfigured. Clearing all of them first means each test states its whole
+ * world.
+ */
+beforeEach(() => {
+  for (const key of KEYS) delete process.env[key]
+})
 
 afterEach(() => setEnv(original))
 

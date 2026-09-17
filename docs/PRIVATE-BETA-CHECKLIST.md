@@ -43,8 +43,8 @@ The item that stops an ordinary Tuesday from reaching customers.
 - [ ] **Production still shows the old release and the old word**, an hour later.
 - [ ] Then promote deliberately: **Actions → Promote to production** → the
       commit → `PROMOTE`. Production picks it up.
-- [ ] Railway → production service → **Settings → Source** reads branch
-      `production`, not `main`.
+- [ ] Railway → `production` environment → **Settings → Source** reads branch
+      `production` — not `main`, and above all not a `claude/…` working branch.
 
 ### A4. Staging is visually unmistakable · **YOU** · BLOCKER
 - [ ] Amber **STAGING** bar across the top of every screen.
@@ -80,6 +80,38 @@ production".
 *Code side:* DONE — `tests/environment.test.ts`, "sends nothing at all from an
 unconfigured staging deployment". The gate wraps the driver, so no send path
 skips it.
+
+---
+
+### A8. The demo company on production behaves · **YOU** · BLOCKER
+
+Only if you are keeping the demo on production. Skip the section entirely if
+you are not — and then confirm `ALLOW_DEMO_RESET` and `DEMO_SEED_TOKEN` are
+unset there.
+
+- [ ] `DEMO_PASSWORD` on production is **not** the repository's default and is
+      12+ characters. (Seeding refuses otherwise, so a successful seed proves
+      this — but check the variable anyway.)
+- [ ] Sign in as each of the three demo accounts and **change the password**.
+      If the demo was seeded before this, those accounts carry a password that
+      was published in a public repository.
+- [ ] The platform admin account still works after a demo rebuild, with the
+      password *you* set rather than the seeded one.
+- [ ] `/admin` → the demo company reads as **Complimentary**, not Active, and
+      is not counted in the MRR figure.
+- [ ] After you have finished seeding: `ALLOW_DEMO_RESET` and `DEMO_SEED_TOKEN`
+      are **removed** from the production variables.
+- [ ] `/admin/system` → *Demo company access* row reads **Ready / Closed**.
+      While either variable is set it reads Wrong, which is the point.
+- [ ] Once a real beta company exists: run a demo rebuild, then confirm that
+      company's customers, jobs and invoices are all still there.
+
+*Code side:* DONE — `tests/demo-production.test.ts`, fifteen tests. Among them:
+a reset with a real company in the same database leaves it untouched; the
+platform administrator survives a reset and keeps its own password; a person
+who also belongs to a real company is not deleted; a partner who referred a
+real company is not deleted; the default password is refused on production;
+and the unlock is not opened by a truthy-looking value.
 
 ---
 
@@ -370,6 +402,7 @@ Every one needs a login, a card, a phone or a real mailbox:
 | A4 | See the staging badge on a real phone |
 | A5–A6 | Prove the two databases are separate |
 | A7 | Prove staging cannot email a real customer |
+| A8 | Change the demo passwords, then close the demo unlock |
 | B1 | R2 upload, read, delete, survive a redeploy |
 | B2 | Receive production email in a real inbox |
 | C1–C2 | Create a backup, and **restore one** |
@@ -397,7 +430,7 @@ fixed and held down by a test, the application is in good shape, and
 Presentation Mode is now a genuinely separate context rather than a hidden
 navigation bar.
 
-It is not ready because **24 blockers above have never been observed by
+It is not ready because **25 blockers above have never been observed by
 anybody**. The environments are specified but not built. The backups are
 scripted but never taken, and never restored. No real card has been charged.
 No real email has arrived. Nobody has handed a real phone to a real person.

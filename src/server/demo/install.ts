@@ -10,10 +10,11 @@
  * companies, sees none of their data, and can be left in place or ignored.
  */
 
-import { assertNotProduction } from '@/lib/environment'
+import { assertDemoWriteAllowed } from '@/lib/environment'
 import {
+  assertDemoPasswordIsSafe,
   DEMO_AFFILIATE_EMAIL,
-  DEMO_EMAILS,
+  DEMO_LOGINS,
   DEMO_SLUG,
   prisma,
   seedDemoData,
@@ -36,8 +37,11 @@ async function conflict(): Promise<string | null> {
   })
   if (organization) return 'The demo company is already loaded.'
 
+  // Only the two accounts the seed owns. The platform admin is upserted rather
+  // than created, so finding one already there is the normal case on a
+  // deployment that has been reinstalled — not a collision.
   const user = await prisma.user.findFirst({
-    where: { email: { in: DEMO_EMAILS } },
+    where: { email: { in: DEMO_LOGINS } },
     select: { email: true },
   })
   if (user) {
@@ -75,7 +79,7 @@ async function conflict(): Promise<string | null> {
  * cannot express still converges rather than failing.
  */
 export async function removeDemoData(): Promise<{ removed: boolean }> {
-  assertNotProduction('Deleting the demo company')
+  assertDemoWriteAllowed('Deleting the demo company')
 
   const organization = await prisma.organization.findUnique({
     where: { slug: DEMO_SLUG },
@@ -88,6 +92,21 @@ export async function removeDemoData(): Promise<{ removed: boolean }> {
   if (organization.slug !== DEMO_SLUG) {
     throw new Error('Refusing to delete an organization that is not the demo company.')
   }
+
+  // Captured before the sweep, because both records live outside the tenant
+  // scope and the rows that tie them to it are about to be deleted.
+  const [members, referrals] = await Promise.all([
+    prisma.membership.findMany({
+      where: { organizationId: organization.id },
+      select: { userId: true },
+    }),
+    prisma.referral.findMany({
+      where: { organizationId: organization.id },
+      select: { affiliateId: true },
+    }),
+  ])
+  const memberIds = members.map((row) => row.userId)
+  const affiliateIds = [...new Set(referrals.map((row) => row.affiliateId))]
 
   const tables = await tenantTablesInDeletionOrder()
 
@@ -123,11 +142,38 @@ export async function removeDemoData(): Promise<{ removed: boolean }> {
 
   await prisma.organization.delete({ where: { id: organization.id } })
 
-  // The accounts and the partner record live outside any organization, so they
-  // are named explicitly rather than found by scope.
-  await prisma.user.deleteMany({ where: { email: { in: DEMO_EMAILS } } })
+  // The accounts and the partner record live outside any organization, so
+  // scope cannot find them. Matching on the demo addresses alone would be
+  // enough on a laptop and is not enough on a deployment holding real
+  // companies, so each is narrowed by something only the demo company's own
+  // rows could have established.
+  //
+  // For the two logins: they must have been members of the demo company, and
+  // — now that it is deleted, taking its memberships with it — must belong to
+  // no other company. A person who joined a real company keeps their account.
+  //
+  // `PLATFORM_ADMIN_EMAIL` is absent from `DEMO_LOGINS` deliberately and must
+  // stay absent. On a real deployment that address is the operator's own, the
+  // account is their only way into `/admin`, and it typically has no
+  // membership at all — so the membership test would not save it.
+  await prisma.user.deleteMany({
+    where: {
+      id: { in: memberIds },
+      email: { in: DEMO_LOGINS },
+      memberships: { none: {} },
+    },
+  })
+
+  // For the partner: the demo's own referral pointed at it, and nothing else
+  // does now. Matching on the code `GDOC20` was the other half of this and has
+  // been dropped — a code is six characters a real partner could reasonably
+  // pick, and it is not identification.
   await prisma.affiliate.deleteMany({
-    where: { OR: [{ email: DEMO_AFFILIATE_EMAIL }, { code: 'GDOC20' }] },
+    where: {
+      OR: [{ id: { in: affiliateIds } }, { email: DEMO_AFFILIATE_EMAIL }],
+      referrals: { none: {} },
+      commissions: { none: {} },
+    },
   })
 
   return { removed: true }
@@ -205,10 +251,17 @@ async function tenantTablesInDeletionOrder(): Promise<string[]> {
 export async function installDemoData(
   options: { replace?: boolean } = {},
 ): Promise<InstallResult> {
-  // Never on production, whatever credential was presented. Demo data is
-  // fictional companies and fictional homeowners, and `replace` deletes a
-  // whole tenant — neither belongs anywhere near real customers' records.
-  assertNotProduction('Loading the demo company')
+  // Off production this is unconditional. On production it needs the deliberate
+  // unlock: demo data is fictional companies and fictional homeowners, and
+  // `replace` deletes a whole tenant, so it is permitted only when an operator
+  // has said in so many words that this deployment holds the demo on purpose.
+  assertDemoWriteAllowed('Loading the demo company')
+
+  // Before the delete below, not after. `seedDemoData` checks this too, but by
+  // then a replace has already removed the demo company — and a run that
+  // deletes the thing it was asked to rebuild and then refuses to rebuild it is
+  // the worst outcome available here.
+  assertDemoPasswordIsSafe()
 
   let replaced = false
 

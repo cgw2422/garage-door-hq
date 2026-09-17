@@ -21,7 +21,7 @@ import { provisionOrganization } from '@/server/organizations/provision'
 import { recordAudit } from '@/lib/audit'
 import { DEMO_CATALOG, DEMO_PRICE, DEMO_SERVICES } from './catalog'
 import { RESIDENTIAL_INSPECTION, isValidResponse } from '@/lib/inspection-template'
-import { assertNotProduction } from '@/lib/environment'
+import { assertNotProduction, isProduction, ProductionSafetyError } from '@/lib/environment'
 
 /**
  * The application's own client, re-exported so the two standalone scripts can
@@ -31,8 +31,19 @@ import { assertNotProduction } from '@/lib/environment'
 export { prisma }
 
 export const DEMO_SLUG = 'precision-garage-door-demo'
-export const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? 'GarageDoorHQ2026!'
 export const PLATFORM_ADMIN_EMAIL = process.env.PLATFORM_ADMIN_EMAIL ?? 'admin@garagedoorhq.test'
+
+/**
+ * The password every demo account is seeded with.
+ *
+ * The fallback is written in this file, which means it is in the repository,
+ * which means it is not a secret anywhere the app is reachable from the
+ * internet. It is fine on a laptop and fine on staging behind a banner. On
+ * production it is a published password on a real sign-in page, so
+ * `assertDemoPasswordIsSafe` refuses it there.
+ */
+export const DEFAULT_DEMO_PASSWORD = 'GarageDoorHQ2026!'
+export const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? DEFAULT_DEMO_PASSWORD
 
 export const DEMO_OWNER_EMAIL = 'mike@precisiongaragedoor.test'
 export const DEMO_TECH_EMAIL = 'tony@precisiongaragedoor.test'
@@ -40,8 +51,47 @@ export const DEMO_TECH_EMAIL = 'tony@precisiongaragedoor.test'
 export const DEMO_OFFICE_EMAIL = 'office@precisiongaragedoor.test'
 export const DEMO_AFFILIATE_EMAIL = 'partner@gdocommunity.test'
 
-/** Every account this seed creates, so a caller can check before it starts. */
-export const DEMO_EMAILS = [DEMO_OWNER_EMAIL, DEMO_TECH_EMAIL, PLATFORM_ADMIN_EMAIL]
+/**
+ * The accounts this seed *owns* — created by it, removable by it.
+ *
+ * The platform admin is deliberately not one of them. Its address comes from
+ * `PLATFORM_ADMIN_EMAIL`, which on a real deployment is the operator's own
+ * address and their only way into `/admin`. The seed will create that account
+ * if it is missing, but removing the demo company must never take it away, and
+ * reinstalling must never reset its password.
+ */
+export const DEMO_LOGINS = [DEMO_OWNER_EMAIL, DEMO_TECH_EMAIL]
+
+/** Every address the seed touches, for a caller checking before it starts. */
+export const DEMO_EMAILS = [...DEMO_LOGINS, PLATFORM_ADMIN_EMAIL]
+
+/**
+ * Refuse to seed a published password onto a deployment real people can reach.
+ *
+ * Thrown before the first insert rather than warned about: a demo account with
+ * a known password is a working login on the same sign-in form every customer
+ * uses, and the account it most likely creates is a platform administrator.
+ */
+export function assertDemoPasswordIsSafe(): void {
+  if (!isProduction()) return
+
+  const supplied = (process.env.DEMO_PASSWORD ?? '').trim()
+  if (supplied.length === 0) {
+    throw new ProductionSafetyError(
+      'DEMO_PASSWORD is not set. On production the demo company would be seeded with the ' +
+        'default password from the repository, which is public. Set DEMO_PASSWORD first.',
+    )
+  }
+  if (supplied === DEFAULT_DEMO_PASSWORD) {
+    throw new ProductionSafetyError(
+      'DEMO_PASSWORD is the default from the repository, which is public. ' +
+        'Choose a different one before seeding the demo company on production.',
+    )
+  }
+  if (supplied.length < 12) {
+    throw new ProductionSafetyError('DEMO_PASSWORD must be at least 12 characters on production.')
+  }
+}
 
 export interface DemoSummary {
   organization: string
@@ -155,6 +205,7 @@ async function stampDisplayNumbers(organizationId: string) {
 }
 
 export async function seedDemoData(): Promise<DemoSummary> {
+  assertDemoPasswordIsSafe()
   const passwordHash = await hashPassword(DEMO_PASSWORD)
 
   // --- People --------------------------------------------------------------
@@ -181,8 +232,16 @@ export async function seedDemoData(): Promise<DemoSummary> {
   })
 
   // Garage Door HQ staff — deliberately not an OWNER of any company.
-  await prisma.user.create({
-    data: {
+  //
+  // Upserted, and never given a new password. On a real deployment this address
+  // is the operator's own and this account is their only way into `/admin`; a
+  // demo reinstall is not a reason to overwrite the credential they signed in
+  // with an hour ago. Creating it is for the empty-database case, where there
+  // is nothing to overwrite.
+  await prisma.user.upsert({
+    where: { email: PLATFORM_ADMIN_EMAIL },
+    update: { platformRole: 'PLATFORM_ADMIN' },
+    create: {
       email: PLATFORM_ADMIN_EMAIL,
       passwordHash,
       firstName: 'Platform',
@@ -256,10 +315,19 @@ export async function seedDemoData(): Promise<DemoSummary> {
     },
   })
 
+  // Complimentary rather than ACTIVE.
+  //
+  // Both grant unrestricted access, so the demo behaves identically. The
+  // difference is what it means to everyone reading it afterwards: ACTIVE is
+  // counted by `activeSubscriptions` and by the MRR figure on the platform
+  // dashboard, so a demo company seeded ACTIVE reads as a paying customer
+  // forever. COMPLIMENTARY is what this actually is — access granted by a
+  // person, on purpose, for nothing.
   await prisma.subscription.update({
     where: { organizationId: orgId },
     data: {
-      status: 'ACTIVE',
+      status: 'COMPLIMENTARY',
+      complimentaryUntil: null,
       trialEndsAt: monthsAgo(13),
       currentPeriodStart: daysAgo(12),
       currentPeriodEnd: daysAgo(-18),

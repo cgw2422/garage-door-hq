@@ -17,60 +17,90 @@ account, and control of the DNS for `garagedoorhq.com`.
 
 ## The order that avoids rework
 
-1. Domains (DNS is slow — start it first) → §11
-2. Railway staging service + database → §1, §3
-3. Cloudflare R2 staging bucket → §6
+1. Railway: two environments, branches, databases → §1, §2, §3
+2. Domains — DNS is the slowest thing, start it as soon as Railway gives you
+   the CNAME targets → §11
+3. Cloudflare R2 buckets → §6
 4. Email provider + domain verification → §7
 5. Deploy staging, check `/admin/system` → §13
-6. Railway production service + database → §2, §3
-7. R2 production bucket → §6
-8. Stripe product, price, webhooks, Connect → §8, §9, §10
-9. Production backups → §4
-10. Restore test → §5
-11. Work `docs/PRIVATE-BETA-CHECKLIST.md`
+6. Stripe product, price, webhooks, Connect → §8, §9, §10
+7. Production backups → §4
+8. Restore test → §5
+9. Work `docs/PRIVATE-BETA-CHECKLIST.md`
 
 ---
 
-## 1. Railway — staging service
+## 1. Railway — two environments
 
-1. Railway → **New Project** → name it `garage-door-hq`.
-2. **New** → **GitHub Repo** → `cgw2422/garage-door-hq`.
-3. The service appears. **Settings** → rename to `staging`.
-4. **Settings → Source**: branch `main`, **Auto Deploy ON**. This is the branch
-   ordinary development merges into; every merge redeploys staging and nothing
-   else.
-5. **Settings → Build**: leave the Nixpacks default. `npm run build` and
+Railway has *environments* as well as services, and they are the right tool
+here. Two environments give you two separate variable sets, which is what
+actually keeps a live Stripe key away from staging: they are not two rows in
+one list waiting to be confused.
+
+If you already have a project deploying this repo, keep it and rename rather
+than starting again — the one you have becomes one of the two.
+
+1. Railway → the project (name it `Garage Door HQ` if it is new).
+2. The environment dropdown at the top → you will have one called `production`,
+   which is Railway's default name for it, not a statement about your app.
+3. You want two, named `staging` and `production`. **New Environment**
+   duplicates an existing one, which is the quickest way to the second.
+
+**If you duplicate, treat every copied variable as wrong until you have
+re-set it.** `AUTH_SECRET` above all: two environments sharing it means a
+session minted on staging is a valid session on production. Railway's
+`${{secret(32)}}` generates one per environment server-side, so neither you nor
+anyone else ever sees the value.
+
+### In each environment
+
+On the service:
+
+1. **Settings → Source → Branch**:
+
+   | Environment | Branch |
+   |---|---|
+   | `staging` | `main` |
+   | `production` | `production` |
+
+2. **Auto Deploy ON** in both. That is safe because of what writes to those
+   branches: ordinary work merges to `main` and deploys staging, while nothing
+   writes to `production` except the *Promote to production* workflow.
+3. **Wait for CI ON** in both. `.github/workflows/ci.yml` runs on every push
+   except to `production` — typecheck, lint, the full test suite, migration
+   safety, a secret scan and a dependency audit. With this on, a commit that
+   fails any of them never reaches a deployment.
+4. **Settings → Build**: leave the Nixpacks default. `npm run build` and
    `npm start` are both in `package.json`; `npm start` runs
    `prisma migrate deploy` before starting, which is what applies migrations.
-6. **Settings → Networking → Generate Domain** for now. The custom domain comes
-   in §11.
+5. **Settings → Networking → Generate Domain** for now. Custom domains are §11.
 
 Do not set variables yet — the database in §3 provides one of them.
 
 ---
 
-## 2. Railway — production service
+## 2. The `production` branch, and the gate in front of it
 
-Same project, second service, so they share nothing but a name.
+The production environment deploys from a branch that only a workflow moves.
 
-1. **New** → **GitHub Repo** → the same repository.
-2. **Settings** → rename to `production`.
-3. **Settings → Source**: branch **`production`**, **Auto Deploy ON**.
+1. GitHub → **Branches** → **New branch** → name `production`, source `main`.
+   Create it from a commit you have tested. After this, only the promotion
+   workflow moves it.
+2. GitHub → **Settings → Environments → New environment** → name it exactly
+   `production` → **Required reviewers** → add yourself.
 
-   This is the whole deployment-safety story. Nothing writes to that branch
-   except the *Promote to production* workflow, so merging to `main` deploys
-   staging and leaves customers alone.
+   `.github/workflows/promote.yml` already declares `environment: production`.
+   Until that environment exists on GitHub the workflow runs straight through
+   with no pause; once it exists, every promotion waits for your approval.
 
-   The branch does not exist yet. Create it once, from a commit you have tested:
-   GitHub → **Branches** → **New branch** → name `production`, from `main`.
-   After that, only the workflow moves it.
-4. **Settings → Networking → Generate Domain** for now.
+Leave no branch protection rule on `production` unless you also allow force
+pushes — the promotion workflow moves the branch with `--force-with-lease`, and
+a rule that forbids that will fail it. The approval gate above is the control
+that matters.
 
-### Require a second look before production deploys (recommended)
-
-GitHub → repository **Settings → Environments → New environment** → name it
-`production` → tick **Required reviewers** → add yourself. The promotion
-workflow already targets that environment, so it will now pause for approval.
+**Do not point any Railway environment at a `claude/…` working branch.** That
+is where work in progress lands; a deployment watching it has no review step in
+front of it at all.
 
 ---
 
@@ -79,21 +109,23 @@ workflow already targets that environment, so it will now pause for approval.
 **They must be separate.** This is the one item on this page with no acceptable
 shortcut.
 
-For each service:
+In **each** environment:
 
 1. Railway project → **New** → **Database** → **Add PostgreSQL**.
-2. Rename them `staging-db` and `production-db` so a glance tells them apart.
-3. On the **staging** service → **Variables** → **New Variable** →
-   **Add Reference** → `staging-db` → `DATABASE_URL`.
-4. On the **production** service → the same, referencing `production-db`.
+2. On the service → **Variables** → **New Variable** → **Add Reference** →
+   the database in that environment → `DATABASE_URL`.
 
-Using Railway's reference syntax rather than pasting the URL means the
-credential never exists in your clipboard, your notes or this repository.
+Using Railway's reference rather than pasting the URL means the credential
+never exists in your clipboard, your notes or this repository.
 
-**Check it:** open `/admin/system` on each once deployed. The Database row says
-how many companies it holds. If staging and production report the same count
-after you have created a company on only one of them, they are the same
-database — stop and fix that before anything else.
+**Check it, do not assume it.** Duplicating an environment should give the copy
+its own database with its own volume, but "should" is not verification, and the
+internal hostname is the same string in both environments — so identical-looking
+connection strings prove nothing either way.
+
+Open `/admin/system` in each once deployed. The Database row says how many
+companies it holds. Create a company on staging only, then refresh both. Same
+count on both means one database, and nothing else matters until that is fixed.
 
 ---
 
@@ -372,13 +404,18 @@ Legend: **required** · *recommended* · optional
 | *`STRIPE_CONNECT_WEBHOOK_SECRET`* | Connect `whsec_...` | §10 — omit to reuse the above |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_live_...` | §8 — public by design |
 | **`PLATFORM_ADMIN_EMAIL`** | your address | Type it |
+| *`DEMO_PASSWORD`* | 12+ characters you choose | Only if you want the demo company here. The repo's default is refused |
 | *`BACKUP_SCHEDULE`* | e.g. `Daily 03:00 UTC, 30 days, Railway + weekly dump to R2` | §4 |
 | *`BACKUP_LAST_VERIFIED_RESTORE`* | e.g. `2026-09-17` | §5 |
 | `TRIAL_DAYS` | `14` | Type it |
 
 **Never set on production:** `AUTH_URL`, `ALLOW_LOCAL_APP_URL`,
-`ALLOW_SEED_RESET`, `DEMO_SEED_TOKEN` (the demo installer refuses production
-regardless), `STAGING_EMAIL_*`, any `sk_test_` key.
+`ALLOW_SEED_RESET`, `STAGING_EMAIL_*`, any `sk_test_` key.
+
+**Set on production only while you are using them, then removed:**
+`DEMO_SEED_TOKEN` and `ALLOW_DEMO_RESET`, which together install or rebuild the
+demo company — see *The demo company*, below. `DEMO_PASSWORD` stays set, and
+must not be the repository's default.
 
 ### Where secrets belong, in one line each
 
@@ -390,7 +427,8 @@ regardless), `STAGING_EMAIL_*`, any `sk_test_` key.
 | Resend key | Railway variables, one per environment |
 | Stripe secret keys | Railway variables — live on production only |
 | Stripe webhook secrets | Railway variables, one per endpoint |
-| `DEMO_SEED_TOKEN` | Railway staging, temporarily, then deleted |
+| `DEMO_SEED_TOKEN` | Railway, temporarily, then deleted |
+| `DEMO_PASSWORD` | Railway variables — required on production, never the repo's default |
 
 None of them belong in this repository, a `.env` file you commit, a chat
 message, a screenshot or a password manager note you paste from.
@@ -414,16 +452,64 @@ these rather than configuring it.
 
 ---
 
-## Loading the demo company on staging
+## The demo company
+
+A fictional company — Precision Garage Door Services — with a year of history:
+repeat customers, doors with service records, a truck low on one spring size,
+an unpaid invoice, a day half finished. It is a tenant like any other and sees
+no other company's data.
+
+### On staging
 
 ```bash
 curl -X POST "https://staging.garagedoorhq.com/api/admin/seed-demo?replace=1" \
   -H "x-seed-token: <the DEMO_SEED_TOKEN you set>"
 ```
 
-Then **delete `DEMO_SEED_TOKEN`** from the staging variables. With it unset the
-route 404s. On production the demo installer refuses outright, whatever token
-is presented.
+Then **delete `DEMO_SEED_TOKEN`**. With it unset the route 404s at everything.
+
+### On production, deliberately
+
+Worth having if you want to walk a prospect through the product on the real
+address rather than asking them to trust a staging URL. It needs three things,
+and the order matters.
+
+1. **`DEMO_PASSWORD`** — required on production, and the repository's default
+   is refused outright. That default is published; a demo account is a working
+   login on the same sign-in form every customer uses. Twelve characters
+   minimum. Set it before anything else, because seeding checks it before it
+   deletes anything.
+2. **`DEMO_SEED_TOKEN`** — a long random string, as on staging.
+3. **`ALLOW_DEMO_RESET=1`** — the production unlock.
+
+Then the same `curl`, against the production address. Afterwards **remove
+`DEMO_SEED_TOKEN` and `ALLOW_DEMO_RESET`**. While either is set, `/admin/system`
+reports it as a fault on production, so a forgotten one is visible rather than
+silent.
+
+**Do not clear `APP_ENV` to achieve this.** It is the shortcut that looks
+equivalent and is not: it releases the outbound email guard, inverts the Stripe
+mode check and changes the storage namespace, all at once, on a deployment
+holding real companies. `ALLOW_DEMO_RESET` unlocks one thing.
+
+### What a production reset will and will not touch
+
+| | |
+|---|---|
+| Deletes | The demo organization and everything scoped to it |
+| Deletes | Its two logins — but only if the demo was the last company they belonged to |
+| Deletes | The demo partner record — but only if no real company was referred by it |
+| **Never touches** | **The `PLATFORM_ADMIN_EMAIL` account.** On a real deployment that is your own address and your only way into `/admin`, and it usually has no company membership at all |
+| **Never touches** | Any other organization's rows |
+
+A reinstall creates the platform admin account only if it is missing, and never
+resets its password.
+
+### After the first production seed
+
+Sign in as each demo user and change their password. The accounts exist with
+whatever `DEMO_PASSWORD` you set, and one person knowing all three passwords is
+fine while that person is you and nobody else has the address.
 
 ---
 

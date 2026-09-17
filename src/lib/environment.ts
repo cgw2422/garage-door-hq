@@ -128,6 +128,49 @@ export function assertNotProduction(operation: string): void {
 }
 
 /**
+ * The demo company, deliberately kept on production.
+ *
+ * `assertNotProduction` is the right default for the demo installer: it
+ * creates fictional companies and fictional homeowners, and its replace path
+ * deletes a whole tenant. None of that belongs near real customers by
+ * accident.
+ *
+ * But an operator may want the demo *on* production on purpose — a live
+ * walkthrough for a prospect, on the real address, without asking them to
+ * trust a staging URL. The wrong way to allow that is to clear `APP_ENV`,
+ * because that unlocks every other safeguard in the same motion: outbound
+ * email stops being held back, the Stripe mode check inverts, storage changes
+ * namespace. One variable, one narrow permission, and it is removed again
+ * afterwards.
+ *
+ * Read fresh rather than memoized: unlike `APP_ENV`, this is expected to be
+ * turned on and off on a running deployment.
+ */
+export const DEMO_UNLOCK_VARIABLE = 'ALLOW_DEMO_RESET'
+
+export function demoWritesUnlocked(): boolean {
+  return (process.env[DEMO_UNLOCK_VARIABLE] ?? '').trim() === '1'
+}
+
+/**
+ * Refuse a demo-company write unless production has explicitly opted in.
+ *
+ * Off production this is not a restriction at all. On production it is the
+ * single gate, and what it permits is still only what the demo installer can
+ * reach: one tenant, identified by its own slug, plus the two accounts that
+ * tenant owns.
+ */
+export function assertDemoWriteAllowed(operation: string): void {
+  if (!environment().isProduction) return
+  if (demoWritesUnlocked()) return
+
+  throw new ProductionSafetyError(
+    `${operation} is disabled on production. Set ${DEMO_UNLOCK_VARIABLE}=1 to allow it for ` +
+      'the demo company only, then remove the variable again.',
+  )
+}
+
+/**
  * Stripe keys carry their own mode in the prefix, so a mistake is detectable
  * rather than a matter of trusting the operator's memory.
  *
