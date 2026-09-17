@@ -12,7 +12,7 @@ import {
   usageSince,
 } from '@/server/inventory/management'
 import { recomputeStockLevel } from '@/server/inventory/ledger'
-import { createTestCompany, stockOf } from './helpers'
+import { createTestCompany, stockOf, uniqueNumber } from './helpers'
 
 /**
  * Inventory management, as an owner actually uses it: put an item on the
@@ -28,7 +28,7 @@ async function trackedItem(session: AppSession, overrides?: { trackInventory?: b
     data: {
       organizationId: session.organizationId,
       category: 'HARDWARE',
-      name: `Nylon Roller ${Math.random().toString(36).slice(2, 8)}`,
+      name: `Nylon Roller ${uniqueNumber()}`,
       costCents: 240,
       priceCents: 900,
       trackInventory: overrides?.trackInventory ?? true,

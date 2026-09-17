@@ -9,7 +9,7 @@ import {
   sendReviewRequest,
   sendReviewRequestForJob,
 } from '@/server/communications/review-requests'
-import { createTestCompany, createTestDoor } from './helpers'
+import { createTestCompany, createTestDoor, uniqueNumber } from './helpers'
 import type { EmailDriver, OutboundEmail } from '@/server/email/types'
 
 /**
@@ -54,8 +54,8 @@ async function completedJobWithEmail(session: AppSession, options?: { email?: st
   return prisma.job.create({
     data: {
       organizationId: session.organizationId,
-      number: Math.floor(Math.random() * 1_000_000),
-      displayNumber: `J-${Math.floor(Math.random() * 1_000_000)}`,
+      number: uniqueNumber(),
+      displayNumber: `J-${uniqueNumber()}`,
       customerId: customer.id,
       propertyId: property.id,
       status: 'COMPLETED',
@@ -208,8 +208,8 @@ describe('when not to ask', () => {
     await prisma.invoice.create({
       data: {
         organizationId: session.organizationId,
-        number: Math.floor(Math.random() * 1_000_000),
-        displayNumber: `INV-${Math.floor(Math.random() * 1_000_000)}`,
+        number: uniqueNumber(),
+        displayNumber: `INV-${uniqueNumber()}`,
         customerId: job.customerId,
         jobId: job.id,
         status: 'SENT',

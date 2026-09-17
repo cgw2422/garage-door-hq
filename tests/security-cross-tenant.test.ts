@@ -26,7 +26,7 @@ import { archiveItem, duplicateItem, updateItem, updatePackage } from '@/server/
 import { updateMember, resendInvitation, revokeInvitation } from '@/server/team/service'
 import { issuePortalLink, revokePortalLink, resolvePortalToken } from '@/server/portal/service'
 import { beginPhotoUpload, deletePhoto, resolveReadablePhoto } from '@/server/media/photos'
-import { createTestCompany, createTestDoor, createTestJob, skuId, stockTruck } from './helpers'
+import { createTestCompany, createTestDoor, createTestJob, skuId, stockTruck, uniqueNumber } from './helpers'
 
 /**
  * Company A against Company B.
@@ -112,7 +112,7 @@ async function buildCompany(): Promise<Fixture> {
   const invoice = await prisma.invoice.create({
     data: {
       organizationId: session.organizationId,
-      number: Math.floor(Math.random() * 100_000),
+      number: uniqueNumber(),
       customerId: customer.id,
       jobId: job.id,
       status: 'SENT',

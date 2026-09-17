@@ -8,7 +8,7 @@ import {
   loadUpcoming,
   rescheduleJob,
 } from '@/server/schedule/service'
-import { createTestCompany, createTestDoor } from './helpers'
+import { createTestCompany, createTestDoor, uniqueNumber } from './helpers'
 import { addTestMember } from './helpers'
 
 /**
@@ -27,7 +27,7 @@ async function scheduledJob(
   return prisma.job.create({
     data: {
       organizationId: session.organizationId,
-      number: Math.floor(Math.random() * 1_000_000),
+      number: uniqueNumber(),
       customerId: customer.id,
       propertyId: property.id,
       doorId: door.id,
@@ -232,7 +232,7 @@ describe('rescheduling', () => {
     const draft = await prisma.job.create({
       data: {
         organizationId: session.organizationId,
-        number: Math.floor(Math.random() * 1_000_000),
+        number: uniqueNumber(),
         customerId: customer.id,
         propertyId: property.id,
         status: 'DRAFT',

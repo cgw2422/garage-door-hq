@@ -32,6 +32,14 @@ concurrency:
   group: production-promotion
   cancel-in-progress: false
 
+# The token needs to write: this job pushes a release tag and moves the
+# `production` branch. Declared here rather than left to the repository default
+# so the workflow says what it needs, and so nothing else in it gets more than
+# that. The repository's Actions setting still has to permit write at all —
+# a read-only default is what produced "denied to github-actions[bot]".
+permissions:
+  contents: write
+
 jobs:
   promote:
     name: Check, tag and promote

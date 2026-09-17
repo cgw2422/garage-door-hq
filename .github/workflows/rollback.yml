@@ -28,6 +28,10 @@ concurrency:
   group: production-promotion
   cancel-in-progress: false
 
+# Moves the `production` branch, so the token has to be able to write.
+permissions:
+  contents: write
+
 jobs:
   rollback:
     name: Move production back

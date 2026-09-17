@@ -62,12 +62,32 @@ export async function createTestCompany(options?: {
   return { session, organizationId: organization.id, userId: user.id, locationId: defaultLocationId }
 }
 
+/**
+ * A number nothing else in the suite will pick.
+ *
+ * These fixtures used `uniqueNumber()` for columns the
+ * database requires to be unique per organization. That is not a unique number
+ * generator, it is a collision with a low probability — and a suite that runs
+ * on every push eventually finds it. It did: a `(organizationId, number)`
+ * violation in `completion.test.ts`, on a commit that touched nothing near it,
+ * passing on a re-run.
+ *
+ * A counter cannot collide with itself. It starts well above the values tests
+ * write by hand (the largest is 999_999 in `numbering.test.ts`) so those cannot
+ * collide with it either.
+ */
+let nextNumber = 500_000
+
+export function uniqueNumber(): number {
+  return nextNumber++
+}
+
 /** A customer with an address and a door carrying a current spring system. */
 export async function createTestDoor(session: AppSession) {
   const customer = await prisma.customer.create({
     data: {
       organizationId: session.organizationId,
-      number: Math.floor(Math.random() * 100_000),
+      number: uniqueNumber(),
       firstName: 'Sam',
       lastName: 'Tester',
       phone: '(555) 000-0000',
@@ -90,7 +110,7 @@ export async function createTestDoor(session: AppSession) {
     data: {
       organizationId: session.organizationId,
       propertyId: property.id,
-      number: Math.floor(Math.random() * 100_000),
+      number: uniqueNumber(),
       nickname: 'Front Garage',
       widthInches: 192,
       heightInches: 84,
@@ -123,7 +143,7 @@ export async function createTestJob(
   return prisma.job.create({
     data: {
       organizationId: session.organizationId,
-      number: Math.floor(Math.random() * 100_000),
+      number: uniqueNumber(),
       customerId: ids.customerId,
       propertyId: ids.propertyId,
       doorId: ids.doorId ?? null,
