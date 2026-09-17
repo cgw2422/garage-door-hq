@@ -24,6 +24,10 @@ env:
   APP_ENV: development
   STORAGE_DRIVER: local
 
+# Checks only. Nothing here writes to the repository.
+permissions:
+  contents: read
+
 jobs:
   verify:
     name: Typecheck, lint, tests, build
