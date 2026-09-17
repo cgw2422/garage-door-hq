@@ -1,6 +1,11 @@
 import { prisma } from '@/lib/db'
 import { appBaseUrlUnchecked } from '@/lib/app-url'
-import { environment, type DeployEnvironment } from '@/lib/environment'
+import {
+  demoWritesUnlocked,
+  DEMO_UNLOCK_VARIABLE,
+  environment,
+  type DeployEnvironment,
+} from '@/lib/environment'
 import { authSecretConfigured } from '@/lib/readiness'
 import { email } from '@/server/email'
 import { readStripeConfigFromEnv } from '@/server/billing/stripe'
@@ -340,6 +345,51 @@ function backupCheck(isProduction: boolean): Check {
 }
 
 /**
+ * Doors left open on purpose.
+ *
+ * Two variables exist so an operator can do something deliberate on
+ * production: load or rebuild the demo company. Both are meant to be removed
+ * afterwards, and both are easy to forget — nothing visibly changes while they
+ * sit there. So this row exists to make a forgotten one impossible to miss on
+ * the screen an operator already checks.
+ *
+ * `DEMO_SEED_TOKEN` is a credential, so only its presence is reported. What it
+ * unlocks is narrow either way: one tenant, identified by its own slug.
+ */
+function demoAccessCheck(isProduction: boolean): Check {
+  const unlocked = demoWritesUnlocked()
+  const seedToken = (process.env.DEMO_SEED_TOKEN ?? '').trim().length > 0
+
+  if (!unlocked && !seedToken) {
+    return {
+      label: 'Demo company access',
+      health: 'ok',
+      detail: 'Closed. The demo company cannot be installed, rebuilt or removed from here.',
+    }
+  }
+
+  const open = [
+    unlocked ? `${DEMO_UNLOCK_VARIABLE} is set` : null,
+    seedToken ? 'DEMO_SEED_TOKEN is set' : null,
+  ].filter(Boolean)
+
+  return {
+    label: 'Demo company access',
+    // On production a forgotten unlock is a standing permission to delete a
+    // tenant, so it is reported as wrong rather than merely noted. Off
+    // production it changes nothing that was not already permitted.
+    health: isProduction ? 'wrong' : 'unknown',
+    detail: isProduction
+      ? `${open.join(' and ')}. Remove ${open.length > 1 ? 'them' : 'it'} once the demo company is as you want it.`
+      : `${open.join(' and ')}, which is expected outside production.`,
+    variables: [
+      ...(unlocked ? [DEMO_UNLOCK_VARIABLE] : []),
+      ...(seedToken ? ['DEMO_SEED_TOKEN'] : []),
+    ],
+  }
+}
+
+/**
  * Everything at once.
  *
  * `ready` means "nothing required for real customers is missing", which is
@@ -365,6 +415,7 @@ export async function systemReadiness(): Promise<SystemReadiness> {
     ...emailChecks(isProduction),
     ...stripeChecks(isProduction),
     backupCheck(isProduction),
+    demoAccessCheck(isProduction),
   ]
 
   return {

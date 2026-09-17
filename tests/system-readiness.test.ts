@@ -50,6 +50,7 @@ const SECRETS = {
   RESEND_API_KEY: `${['re', ''].join('_')}RESENDAPIKEYVALUE123456789`,
   APP_URL: 'https://app.garagedoorhq.example',
   STAGING_EMAIL_REDIRECT_TO: 'operator@garagedoorhq.example',
+  DEMO_SEED_TOKEN: 'DEMOSEEDTOKENVALUE0123456789',
 }
 
 function reset() {
@@ -268,5 +269,58 @@ describe('the outbound email guard', () => {
       (entry) => entry.label === 'Outbound email guard',
     )
     expect(check?.detail).toMatch(/nothing can leave/i)
+  })
+})
+
+describe('doors left open on purpose', () => {
+  it('is quiet when both are closed', async () => {
+    process.env = { ...ORIGINAL, APP_ENV: 'production' }
+    delete process.env.ALLOW_DEMO_RESET
+    delete process.env.DEMO_SEED_TOKEN
+    reset()
+
+    const check = (await systemReadiness()).checks.find(
+      (entry) => entry.label === 'Demo company access',
+    )
+    expect(check?.health).toBe('ok')
+    expect(check?.detail).toMatch(/closed/i)
+  })
+
+  /**
+   * The failure this row exists for: an operator resets the demo, gets
+   * distracted, and leaves a standing permission to delete a tenant sitting on
+   * production where nothing about the running app looks any different.
+   */
+  it('reports a forgotten unlock on production as wrong', async () => {
+    process.env = { ...ORIGINAL, APP_ENV: 'production', ALLOW_DEMO_RESET: '1' }
+    delete process.env.DEMO_SEED_TOKEN
+    reset()
+
+    const readiness = await systemReadiness()
+    const check = readiness.checks.find((entry) => entry.label === 'Demo company access')
+    expect(check?.health).toBe('wrong')
+    expect(check?.detail).toMatch(/remove it/i)
+    expect(readiness.ready).toBe(false)
+  })
+
+  it('does not nag about it on staging, where it changes nothing', async () => {
+    process.env = { ...ORIGINAL, APP_ENV: 'staging', ALLOW_DEMO_RESET: '1' }
+    reset()
+
+    const check = (await systemReadiness()).checks.find(
+      (entry) => entry.label === 'Demo company access',
+    )
+    expect(check?.health).toBe('unknown')
+    expect(check?.detail).toMatch(/expected outside production/i)
+  })
+
+  it('names the seed token without printing it', async () => {
+    process.env = { ...ORIGINAL, APP_ENV: 'production', DEMO_SEED_TOKEN: SECRETS.DEMO_SEED_TOKEN }
+    reset()
+
+    const readiness = await systemReadiness()
+    const check = readiness.checks.find((entry) => entry.label === 'Demo company access')
+    expect(check?.variables).toContain('DEMO_SEED_TOKEN')
+    expect(JSON.stringify(readiness)).not.toContain(SECRETS.DEMO_SEED_TOKEN)
   })
 })

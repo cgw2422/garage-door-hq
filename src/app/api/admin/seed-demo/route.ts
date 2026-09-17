@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { clientAddress, enforceRateLimit } from '@/lib/rate-limit'
 import { installDemoData } from '@/server/demo/install'
 import { userMessage } from '@/lib/errors'
+import { DEMO_UNLOCK_VARIABLE, isProduction } from '@/lib/environment'
 
 /**
  * Load the demo company onto a running deployment.
@@ -88,10 +89,19 @@ export async function POST(request: Request) {
       signIn: {
         owner: summary.ownerEmail,
         technician: summary.techEmail,
-        platformAdmin: summary.platformEmail,
-        password: summary.password,
+        // Echoed back on a laptop or staging, where it is the repository's own
+        // default and knowing it is the point. Withheld on production, where it
+        // is a password the operator chose and this response ends up in a
+        // terminal's scrollback and a shell history file.
+        password: isProduction() ? null : summary.password,
       },
-      next: 'Unset DEMO_SEED_TOKEN now that the demo company exists.',
+      platformAdmin: {
+        email: summary.platformEmail,
+        note: 'Created only if it was missing. An existing account keeps its own password.',
+      },
+      next: isProduction()
+        ? `Unset DEMO_SEED_TOKEN and ${DEMO_UNLOCK_VARIABLE} now that the demo company exists.`
+        : 'Unset DEMO_SEED_TOKEN now that the demo company exists.',
     })
   } catch (error) {
     console.error('[demo.seed] failed', error)
