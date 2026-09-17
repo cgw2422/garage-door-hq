@@ -32,6 +32,12 @@ export default async function PlatformLayout({ children }: { children: ReactNode
             >
               Affiliates
             </Link>
+            <Link
+              href="/admin/system"
+              className="text-sm font-semibold text-navy-200 hover:text-white"
+            >
+              System
+            </Link>
             <span className="hidden truncate text-sm text-navy-400 sm:inline">{user.email}</span>
           </nav>
         </div>

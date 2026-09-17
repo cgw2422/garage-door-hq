@@ -31,7 +31,7 @@ let otherSession: AppSession
 let jobId: string
 
 beforeAll(async () => {
-  process.env.AUTH_SECRET = process.env.AUTH_SECRET ?? 'test-secret-for-local-upload-signing'
+  process.env.AUTH_SECRET = process.env.AUTH_SECRET ?? 'not-a-real-secret-for-upload-signing'
   process.env.STORAGE_DRIVER = 'local'
   process.env.LOCAL_STORAGE_DIR = '.storage-test'
   resetStorage()
