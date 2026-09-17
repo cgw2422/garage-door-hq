@@ -8,7 +8,7 @@ import {
   payableInvoice,
   recordStripePayment,
 } from '@/server/billing/customer-payments'
-import { createTestCompany, createTestDoor } from './helpers'
+import { createTestCompany, createTestDoor, uniqueNumber } from './helpers'
 
 /**
  * Customer card payments.
@@ -25,8 +25,8 @@ async function invoiceFor(session: AppSession, totalCents = 42700) {
   const job = await prisma.job.create({
     data: {
       organizationId: session.organizationId,
-      number: Math.floor(Math.random() * 1_000_000),
-      displayNumber: `J-${Math.floor(Math.random() * 1_000_000)}`,
+      number: uniqueNumber(),
+      displayNumber: `J-${uniqueNumber()}`,
       customerId: customer.id,
       propertyId: property.id,
       status: 'COMPLETED',
@@ -34,7 +34,7 @@ async function invoiceFor(session: AppSession, totalCents = 42700) {
     },
   })
 
-  const number = Math.floor(Math.random() * 1_000_000)
+  const number = uniqueNumber()
   return prisma.invoice.create({
     data: {
       organizationId: session.organizationId,

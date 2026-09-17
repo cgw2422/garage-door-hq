@@ -12,7 +12,7 @@ import { completeJob } from '@/server/jobs/completion'
 import { recordPayment } from '@/server/invoices/service'
 import { updateItem } from '@/server/pricebook/service'
 import { buildEstimateDocument } from '@/server/documents/build'
-import { createTestCompany, createTestDoor, createTestJob, skuId, stockTruck } from './helpers'
+import { createTestCompany, createTestDoor, createTestJob, skuId, stockTruck, uniqueNumber } from './helpers'
 
 /**
  * Money and stock, under a hostile payload.
@@ -225,7 +225,7 @@ describe('payments', () => {
     const invoice = await prisma.invoice.create({
       data: {
         organizationId: session.organizationId,
-        number: Math.floor(Math.random() * 100_000),
+        number: uniqueNumber(),
         customerId: customer.id,
         status: 'SENT',
         subtotalCents: 10_000,
@@ -256,7 +256,7 @@ describe('payments', () => {
     const invoice = await prisma.invoice.create({
       data: {
         organizationId: session.organizationId,
-        number: Math.floor(Math.random() * 100_000),
+        number: uniqueNumber(),
         customerId: customer.id,
         status: 'SENT',
         subtotalCents: 10_000,
@@ -284,7 +284,7 @@ describe('payments', () => {
     const invoice = await prisma.invoice.create({
       data: {
         organizationId: session.organizationId,
-        number: Math.floor(Math.random() * 100_000),
+        number: uniqueNumber(),
         customerId: customer.id,
         status: 'SENT',
         subtotalCents: 1_000,

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { prisma } from '@/lib/db'
 import type { AppSession } from '@/lib/session'
 import { parseQuery, search } from '@/server/search/service'
-import { createTestCompany, createTestDoor, skuId } from './helpers'
+import { createTestCompany, createTestDoor, skuId, uniqueNumber } from './helpers'
 
 /**
  * Global search.
@@ -15,7 +15,7 @@ async function customerNamed(
   session: AppSession,
   input: { firstName: string; lastName: string; phone?: string; email?: string },
 ) {
-  const number = Math.floor(Math.random() * 1_000_000)
+  const number = uniqueNumber()
   return prisma.customer.create({
     data: {
       organizationId: session.organizationId,
