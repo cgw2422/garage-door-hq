@@ -131,6 +131,13 @@ jobs:
         id: tag
         run: |
           set -euo pipefail
+          # An annotated tag records who promoted and when, which is the point of
+          # having one — but it needs a committer identity, and a fresh runner
+          # has none. The bot identity is the honest attribution: the workflow
+          # created the tag. Who asked for it is in the message below.
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
           TAG="release-$(date -u +%Y%m%d-%H%M%S)-${{ steps.resolve.outputs.short }}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           git tag -a "$TAG" "${{ steps.resolve.outputs.sha }}" \
