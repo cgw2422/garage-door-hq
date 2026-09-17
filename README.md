@@ -105,6 +105,11 @@ npm run check:migrations  # what a release would do to production's schema
   what is left, and the verdict.
 - `docs/ENVIRONMENTS.md` — development / staging / production, how a release is
   promoted, how it is rolled back, and how to restore a backup.
+- `docs/BETA-SETUP.md` — everything to configure outside this repository:
+  Railway, Cloudflare R2, email, Stripe, domains, and every variable split
+  STAGING / PRODUCTION.
+- `docs/PRIVATE-BETA-CHECKLIST.md` — what has to be *observed* before a real
+  garage door company is invited. Nothing counts because code exists.
 
 Production deploys only from the `production` branch, which nothing writes
 except the promotion workflow. A normal push deploys to staging and leaves
