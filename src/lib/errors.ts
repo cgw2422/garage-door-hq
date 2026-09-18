@@ -19,6 +19,9 @@ const DOMAIN_ERRORS = new Set([
   'AppUrlError',
   'BillingError',
   'BillingNotConfiguredError',
+  // "That password is not correct" is the whole message, and the person
+  // reading it is the account holder.
+  'ChangePasswordError',
   'CompletionError',
   'ConnectError',
   'ContentTypeError',

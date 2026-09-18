@@ -39,7 +39,7 @@ export default async function MorePage() {
       <PageBody>
         <Card padded={false}>
           <ListRow
-            href="/settings/profile"
+            href="/account"
             leading={
               <span className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-50 text-sm font-bold text-brand-700">
                 {session.firstName.charAt(0)}

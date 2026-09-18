@@ -93,6 +93,10 @@ export function landingFor(user: AuthenticatedUser): string {
 export async function requireUser(): Promise<AuthenticatedUser> {
   const user = await getAuthenticatedUser()
   if (!user) redirect('/login')
+  // Middleware already turns a presenting device back at the edge, but this is
+  // a gate in its own right now — and what it guards is a password form on a
+  // device that has deliberately been handed to a customer.
+  await assertNotPresenting(user.userId)
   return user
 }
 

@@ -38,7 +38,12 @@ export default async function PlatformLayout({ children }: { children: ReactNode
             >
               System
             </Link>
-            <span className="hidden truncate text-sm text-navy-400 sm:inline">{user.email}</span>
+            <Link
+              href="/account"
+              className="hidden truncate text-sm text-navy-400 hover:text-white sm:inline"
+            >
+              {user.email}
+            </Link>
           </nav>
         </div>
       </header>
