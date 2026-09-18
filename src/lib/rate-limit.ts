@@ -25,6 +25,12 @@ export const RATE_LIMITS = {
   signup: { limit: 5, windowSeconds: 3600 },
   passwordResetRequest: { limit: 5, windowSeconds: 3600 },
   passwordResetConfirm: { limit: 10, windowSeconds: 3600 },
+  /**
+   * Changing your own password, which requires the current one — so this is
+   * about an unattended signed-in device being used to guess it, not about a
+   * stranger on the internet. Room to fat-finger it, not to grind.
+   */
+  passwordChange: { limit: 10, windowSeconds: 900 },
   /** A customer guessing portal tokens. */
   portalToken: { limit: 30, windowSeconds: 600 },
   /** Anything that spends money, stock, or someone else's trust. */
