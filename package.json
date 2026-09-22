@@ -26,7 +26,8 @@
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:health": "node scripts/health-check.mjs",
     "check:secrets": "node scripts/scan-secrets.mjs",
-    "adversarial": "node scripts/adversarial.mjs"
+    "adversarial": "node scripts/adversarial.mjs",
+    "video": "node scripts/demo-video.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
