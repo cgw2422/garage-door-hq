@@ -4,6 +4,7 @@ import { landingFor, requireUser } from '@/lib/session'
 import { PageBody, PageHeader } from '@/components/app/page-header'
 import { Card, SectionHeading } from '@/components/ui/card'
 import { PasswordForm } from './password-form'
+import { SignOutButton } from './sign-out'
 
 export const metadata: Metadata = { title: 'Your account' }
 export const dynamic = 'force-dynamic'
@@ -36,6 +37,14 @@ export default async function AccountPage() {
         <Card>
           <SectionHeading>Change your password</SectionHeading>
           <PasswordForm />
+        </Card>
+
+        <Card>
+          <SectionHeading>Sign out</SectionHeading>
+          <p className="mt-2 mb-3 text-sm leading-relaxed text-ink-muted">
+            Ends this session on this device only.
+          </p>
+          <SignOutButton />
         </Card>
 
         <Card>
