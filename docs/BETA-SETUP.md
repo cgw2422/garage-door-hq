@@ -13,11 +13,29 @@ and Stripe verification.
 **Before you start, have:** a Railway account, a Cloudflare account, a Stripe
 account, and control of the DNS for `thegaragedoorhq.com`.
 
-The application lives at **`app.thegaragedoorhq.com`** — that is the address
-every user signs in at, and the one every customer link is built from. Staging
-is `staging.thegaragedoorhq.com`. Nothing should ever be published on a
+## Which name is what
+
+| Host | Is | Served by |
+|---|---|---|
+| `thegaragedoorhq.com` | The public marketing site | Wherever you host it — **not Railway** |
+| `app.thegaragedoorhq.com` | The application | Railway, production environment |
+| `staging.thegaragedoorhq.com` | The application, for testing | Railway, staging environment |
+
+Every user signs in at `app.`, and every customer link — estimates, invoices,
+portal, password resets — is built from it. Nothing should be published on a
 Railway-generated `*.up.railway.app` address; those exist only to reach a
 deployment before its real domain is attached.
+
+Do **not** point the apex at Railway. It belongs to the marketing site, and the
+application never needs to answer on it.
+
+**One thing the split breaks if you leave it:** affiliate links. The referral
+cookie is written by the application's middleware and is host-only, so a
+partner sharing `thegaragedoorhq.com/?ref=SKOOL` attributes nobody — the
+visitor lands on the marketing site, which never runs that code. Partner links
+must point at `app.thegaragedoorhq.com/?ref=CODE`, or the marketing site must
+carry `?ref=` through to its signup button. Silent when wrong, and what it
+costs is somebody's commission.
 
 ---
 
