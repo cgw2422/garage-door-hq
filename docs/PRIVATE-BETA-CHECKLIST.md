@@ -18,16 +18,16 @@ Setup instructions: `docs/BETA-SETUP.md`. Security findings:
 ## A. Environments
 
 ### A1. Staging deployed · **YOU** · BLOCKER
-- [ ] `https://staging.garagedoorhq.com` loads over HTTPS.
+- [ ] `https://staging.thegaragedoorhq.com` loads over HTTPS.
 - [ ] Sign in works.
 - [ ] `/admin/system` shows **Environment: STAGING · Declared**.
 
 Not "the service exists in Railway" — you signed in.
 
 ### A2. Production deployed · **YOU** · BLOCKER
-- [ ] `https://app.garagedoorhq.com` loads over HTTPS.
+- [ ] `https://app.thegaragedoorhq.com` loads over HTTPS.
 - [ ] `/admin/system` shows **Environment: PRODUCTION · Declared**.
-- [ ] `node scripts/health-check.mjs https://app.garagedoorhq.com --expect production`
+- [ ] `node scripts/health-check.mjs https://app.thegaragedoorhq.com --expect production`
       exits 0.
 
 That command fails if production is running with local disk, without an email
@@ -134,7 +134,7 @@ On **production**:
 - [ ] Send yourself an estimate from production, to a **real** mailbox.
 - [ ] It arrives. **No** `[STAGING]` tag.
 - [ ] From-name is the garage door company, reply-to is their address.
-- [ ] The link opens the estimate on `app.garagedoorhq.com`.
+- [ ] The link opens the estimate on `app.thegaragedoorhq.com`.
 - [ ] It is in **Inbox**, not spam. If spam: recheck SPF/DKIM (§7 of the setup
       guide) and add DMARC.
 - [ ] Repeat for an invoice and a team invitation.
@@ -232,7 +232,7 @@ The one to spend proper time on, with someone else holding the phone.
 
 - [ ] Estimate → **Present to Customer**. Handover screen first.
 - [ ] Hand the phone to someone and ask them to *try to get out of it*.
-- [ ] Type `app.garagedoorhq.com/today` in the address bar → **comes back to
+- [ ] Type `app.thegaragedoorhq.com/today` in the address bar → **comes back to
       the presentation**.
 - [ ] Same for `/customers`, `/money`, `/settings`, `/admin`.
 - [ ] Back gesture → stays inside.

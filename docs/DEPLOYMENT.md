@@ -63,7 +63,7 @@ precedence.
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` — reference the Postgres service, don't paste the string |
 | `AUTH_SECRET` | `openssl rand -base64 32` — not `NEXTAUTH_SECRET`, and not blank |
 | `AUTH_TRUST_HOST` | `true` |
-| `NEXT_PUBLIC_APP_URL` | the public address, e.g. `https://app.garagedoorhq.com` (baked at build time) |
+| `NEXT_PUBLIC_APP_URL` | the public address, e.g. `https://app.thegaragedoorhq.com` (baked at build time) |
 | `APP_URL` | optional; the same address, read at run time, and wins over the baked one |
 | `NEXT_PUBLIC_APP_NAME` | `Garage Door HQ` |
 

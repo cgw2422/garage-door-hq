@@ -11,7 +11,13 @@ and nowhere else.
 and Stripe verification.
 
 **Before you start, have:** a Railway account, a Cloudflare account, a Stripe
-account, and control of the DNS for `garagedoorhq.com`.
+account, and control of the DNS for `thegaragedoorhq.com`.
+
+The application lives at **`app.thegaragedoorhq.com`** — that is the address
+every user signs in at, and the one every customer link is built from. Staging
+is `staging.thegaragedoorhq.com`. Nothing should ever be published on a
+Railway-generated `*.up.railway.app` address; those exist only to reach a
+deployment before its real domain is attached.
 
 ---
 
@@ -222,7 +228,7 @@ numbers would still be sitting somewhere with weaker access control.
 Resend is the simpler of the two the application supports.
 
 1. [resend.com](https://resend.com) → **Domains** → **Add Domain** →
-   `garagedoorhq.com`.
+   `thegaragedoorhq.com`.
 2. Resend shows DNS records — an MX and two or three TXT (SPF, DKIM, and a
    DMARC suggestion). Add every one at your DNS provider.
 3. Wait for **Verified**. Usually minutes, sometimes hours.
@@ -230,13 +236,13 @@ Resend is the simpler of the two the application supports.
    - One for staging, permission **Sending access**.
    - One for production, the same.
    - Copy each straight into the matching Railway variable.
-5. Decide the from-address. `no-reply@garagedoorhq.com` is conventional.
+5. Decide the from-address. `no-reply@thegaragedoorhq.com` is conventional.
    Garage door companies' own messages go out from this address wearing *their*
    name and with their address as reply-to, which is how a small company sends
    branded mail without setting up its own domain.
 
 **Deliverability, worth the ten minutes:** add a DMARC record —
-`_dmarc.garagedoorhq.com TXT "v=DMARC1; p=none; rua=mailto:you@garagedoorhq.com"`.
+`_dmarc.thegaragedoorhq.com TXT "v=DMARC1; p=none; rua=mailto:you@thegaragedoorhq.com"`.
 Start at `p=none`, watch the reports, tighten later.
 
 ---
@@ -271,7 +277,7 @@ account never activates.
 
 1. **Developers → Webhooks → Add endpoint**.
 2. **Production** (live mode):
-   - URL: `https://app.garagedoorhq.com/api/webhooks/stripe`
+   - URL: `https://app.thegaragedoorhq.com/api/webhooks/stripe`
    - Events:
      ```
      checkout.session.completed
@@ -290,7 +296,7 @@ account never activates.
    - Add endpoint → reveal the **Signing secret** (`whsec_...`) → production
      variable `STRIPE_WEBHOOK_SECRET`.
 3. **Staging** (test mode): the same events, URL
-   `https://staging.garagedoorhq.com/api/webhooks/stripe`, its own signing
+   `https://staging.thegaragedoorhq.com/api/webhooks/stripe`, its own signing
    secret into the staging variable.
 
 The endpoint verifies that signature over the exact request bytes before
@@ -313,7 +319,7 @@ this way.
    - Fill in your business details, support email and a statement descriptor.
      Connected companies see these during onboarding.
    - **Branding**: your logo and colour, so a technician recognises the flow.
-   - **Redirects**: add `https://app.garagedoorhq.com/settings/payments` and the
+   - **Redirects**: add `https://app.thegaragedoorhq.com/settings/payments` and the
      staging equivalent.
 3. **Connect webhooks**: if you register a separate Connect endpoint, put its
    signing secret in `STRIPE_CONNECT_WEBHOOK_SECRET`. If you use one endpoint
@@ -328,13 +334,13 @@ this way.
 
 DNS first, because it is the slowest thing here.
 
-1. Railway → **staging** service → **Settings → Networking → Custom Domain** →
-   `staging.garagedoorhq.com`. Railway shows a CNAME target.
-2. Railway → **production** service → the same → `app.garagedoorhq.com`.
+1. Railway → **staging** environment → the service → **Settings → Networking →
+   Custom Domain** → `staging.thegaragedoorhq.com`. Railway shows a CNAME target.
+2. Railway → **production** environment → the same → `app.thegaragedoorhq.com`.
 3. At your DNS provider:
    ```
-   staging.garagedoorhq.com   CNAME   <target Railway shows>
-   app.garagedoorhq.com       CNAME   <target Railway shows>
+   staging.thegaragedoorhq.com   CNAME   <target Railway shows>
+   app.thegaragedoorhq.com       CNAME   <target Railway shows>
    ```
 4. Wait for Railway to show the certificate as issued.
 5. Set `APP_URL` and `NEXT_PUBLIC_APP_URL` on each service to match, exactly,
@@ -357,7 +363,7 @@ Legend: **required** · *recommended* · optional
 | **`APP_ENV`** | `staging` | Type it. The most important variable here. |
 | **`DATABASE_URL`** | reference | §3 — Add Reference → `staging-db` |
 | **`AUTH_SECRET`** | 32 random bytes | `openssl rand -base64 32` — **different from production's** |
-| **`APP_URL`** | `https://staging.garagedoorhq.com` | §11 |
+| **`APP_URL`** | `https://staging.thegaragedoorhq.com` | §11 |
 | **`NEXT_PUBLIC_APP_URL`** | the same | §11 |
 | *`STORAGE_DRIVER`* | `r2` | Type it |
 | *`R2_ACCOUNT_ID`* | Cloudflare account id | §6 |
@@ -365,7 +371,7 @@ Legend: **required** · *recommended* · optional
 | *`R2_SECRET_ACCESS_KEY`* | staging token | §6 — shown once |
 | *`R2_BUCKET`* | `gdhq-staging` | §6 |
 | *`RESEND_API_KEY`* | staging key | §7 |
-| *`EMAIL_FROM_ADDRESS`* | `no-reply@garagedoorhq.com` | §7 |
+| *`EMAIL_FROM_ADDRESS`* | `no-reply@thegaragedoorhq.com` | §7 |
 | *`EMAIL_FROM_NAME`* | `Garage Door HQ` | Type it |
 | **`STAGING_EMAIL_REDIRECT_TO`** | your own inbox | Type it — **or** `STAGING_EMAIL_ALLOWLIST` |
 | *`STRIPE_SECRET_KEY`* | `sk_test_...` | §8 — **test key only** |
@@ -387,7 +393,7 @@ Legend: **required** · *recommended* · optional
 | **`APP_ENV`** | `production` | Type it. Without it, outbound email is held back. |
 | **`DATABASE_URL`** | reference | §3 — Add Reference → `production-db` |
 | **`AUTH_SECRET`** | 32 random bytes | `openssl rand -base64 32` — **its own, never staging's** |
-| **`APP_URL`** | `https://app.garagedoorhq.com` | §11 |
+| **`APP_URL`** | `https://app.thegaragedoorhq.com` | §11 |
 | **`NEXT_PUBLIC_APP_URL`** | the same | §11 |
 | **`STORAGE_DRIVER`** | `r2` | Type it |
 | **`R2_ACCOUNT_ID`** | Cloudflare account id | §6 |
@@ -395,9 +401,9 @@ Legend: **required** · *recommended* · optional
 | **`R2_SECRET_ACCESS_KEY`** | production token | §6 — shown once |
 | **`R2_BUCKET`** | `gdhq-production` | §6 |
 | **`RESEND_API_KEY`** | production key | §7 |
-| **`EMAIL_FROM_ADDRESS`** | `no-reply@garagedoorhq.com` | §7 |
+| **`EMAIL_FROM_ADDRESS`** | `no-reply@thegaragedoorhq.com` | §7 |
 | **`EMAIL_FROM_NAME`** | `Garage Door HQ` | Type it |
-| *`EMAIL_SUPPORT_ADDRESS`* | `support@garagedoorhq.com` | Reply-to on platform mail |
+| *`EMAIL_SUPPORT_ADDRESS`* | `support@thegaragedoorhq.com` | Reply-to on platform mail |
 | **`STRIPE_SECRET_KEY`** | `sk_live_...` | §8 |
 | **`STRIPE_PRICE_ID_STANDARD`** | live `price_...` | §8 |
 | **`STRIPE_WEBHOOK_SECRET`** | production `whsec_...` | §9 |
@@ -462,7 +468,7 @@ no other company's data.
 ### On staging
 
 ```bash
-curl -X POST "https://staging.garagedoorhq.com/api/admin/seed-demo?replace=1" \
+curl -X POST "https://staging.thegaragedoorhq.com/api/admin/seed-demo?replace=1" \
   -H "x-seed-token: <the DEMO_SEED_TOKEN you set>"
 ```
 
@@ -527,5 +533,5 @@ fine while that person is you and nobody else has the address.
 | Everything works but says STAGING | `APP_ENV` is unset on production. |
 
 `/api/health` answers the same questions without a login, and
-`node scripts/health-check.mjs https://app.garagedoorhq.com --expect production`
+`node scripts/health-check.mjs https://app.thegaragedoorhq.com --expect production`
 turns it into a pass or a fail.

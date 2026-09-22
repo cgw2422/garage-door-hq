@@ -1,7 +1,7 @@
 /**
  * Affiliate attribution.
  *
- * A partner shares `garagedoorhq.com/?ref=SKOOL`. The person reads the page,
+ * A partner shares `thegaragedoorhq.com/?ref=SKOOL`. The person reads the page,
  * maybe comes back tomorrow, then signs up. The code has to survive all of
  * that, which a query parameter alone does not — so it is written to a cookie
  * the first time it is seen and read at signup.
