@@ -294,11 +294,17 @@ Start at `p=none`, watch the reports, tighten later.
 
 ## 9. Stripe webhooks
 
-Two endpoints, one per environment. Without these, someone can pay and their
-account never activates.
+**Two registrations per environment, at the same URL.** Stripe asks, when you
+add an endpoint, whether it listens to events on *your* account or on
+*connected* accounts. Those are two different endpoints with two different
+signing secrets even when the URL is identical, and one does not deliver the
+other's events. Your own subscriptions come from the first; a homeowner paying
+a company's invoice comes from the second. Register only the first and
+subscriptions work while customer payments never arrive.
 
 1. **Developers → Webhooks → Add endpoint**.
-2. **Production** (live mode):
+2. **Production, your account** (live mode):
+   - Listen to: **Events on your account**
    - URL: `https://thegaragedoorhq.com/api/webhooks/stripe`
    - Events:
      ```
@@ -311,22 +317,32 @@ account never activates.
      invoice.paid
      invoice.payment_failed
      invoice.payment_succeeded
+     ```
+   - Add endpoint → reveal the **Signing secret** (`whsec_...`) → production
+     variable `STRIPE_WEBHOOK_SECRET`.
+3. **Production, connected accounts** (live mode): add a *second* endpoint at
+   the same URL, listening to **Events on Connected accounts**, with:
+     ```
      payment_intent.succeeded
      charge.refunded
      account.updated
      ```
-   - Add endpoint → reveal the **Signing secret** (`whsec_...`) → production
-     variable `STRIPE_WEBHOOK_SECRET`.
-3. **Staging** (test mode): the same events, URL
-   `https://staging.thegaragedoorhq.com/api/webhooks/stripe`, its own signing
-   secret into the staging variable.
+   Its signing secret is a different `whsec_...` → production variable
+   `STRIPE_CONNECT_WEBHOOK_SECRET`.
+4. **Staging** (test mode): both registrations again, URL
+   `https://staging.thegaragedoorhq.com/api/webhooks/stripe`, their own two
+   signing secrets into the staging variables.
 
-The endpoint verifies that signature over the exact request bytes before
-parsing anything, and records every event id under a unique constraint, so a
-replay or a retry does nothing twice.
+The endpoint verifies the signature over the exact request bytes before parsing
+anything — against both configured secrets, since it cannot know in advance
+which registration a delivery came from — and records every event id under a
+unique constraint, so a replay or a retry does nothing twice.
 
-**Check it:** Stripe → the endpoint → **Send test webhook**. You should see a
-200. A 503 means `STRIPE_WEBHOOK_SECRET` is not set.
+**Check it:** Stripe → each endpoint → **Send test webhook**. Both should
+answer 200. A 503 means `STRIPE_WEBHOOK_SECRET` is not set at all. A 400 on the
+Connect endpoint means its secret is missing or wrong — and 400 is the one
+answer Stripe does not retry, so a Connect endpoint left at 400 loses customer
+payments silently.
 
 ---
 
@@ -343,10 +359,11 @@ this way.
    - **Branding**: your logo and colour, so a technician recognises the flow.
    - **Redirects**: add `https://thegaragedoorhq.com/settings/payments` and the
      staging equivalent.
-3. **Connect webhooks**: if you register a separate Connect endpoint, put its
-   signing secret in `STRIPE_CONNECT_WEBHOOK_SECRET`. If you use one endpoint
-   for both, leave that variable unset — the application falls back to
-   `STRIPE_WEBHOOK_SECRET`.
+3. **Connect webhooks**: §9 step 3. The connected-accounts endpoint's own
+   signing secret goes in `STRIPE_CONNECT_WEBHOOK_SECRET`. Leaving it unset
+   makes the application fall back to `STRIPE_WEBHOOK_SECRET`, which is only
+   correct if Stripe genuinely issued you one secret for both — it normally
+   does not.
 4. Stripe will ask for your own business verification before live Connect
    works. **Start this early**; it can take a day or two.
 
@@ -436,7 +453,7 @@ Legend: **required** · *recommended* · optional
 | **`STRIPE_SECRET_KEY`** | `sk_live_...` | §8 |
 | **`STRIPE_PRICE_ID_STANDARD`** | live `price_...` | §8 |
 | **`STRIPE_WEBHOOK_SECRET`** | production `whsec_...` | §9 |
-| *`STRIPE_CONNECT_WEBHOOK_SECRET`* | Connect `whsec_...` | §10 — omit to reuse the above |
+| **`STRIPE_CONNECT_WEBHOOK_SECRET`** | Connect `whsec_...` | §9 — the connected-accounts endpoint's own secret |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_live_...` | §8 — public by design |
 | **`PLATFORM_ADMIN_EMAIL`** | your address | Type it |
 | *`DEMO_PASSWORD`* | 12+ characters you choose | Only if you want the demo company here. The repo's default is refused |
@@ -559,6 +576,7 @@ fine while that person is you and nobody else has the address.
 | Nobody receives email | No provider key, or the domain is not verified. |
 | Staging sends no email | Working as designed. Set `STAGING_EMAIL_REDIRECT_TO`. |
 | Subscriptions never activate | `STRIPE_WEBHOOK_SECRET` is missing; the endpoint answers 503. |
+| A customer pays but the invoice stays unpaid | No connected-accounts endpoint, or `STRIPE_CONNECT_WEBHOOK_SECRET` is wrong. Stripe shows 400s on that endpoint. |
 | Everything works but says STAGING | `APP_ENV` is unset on production. |
 
 `/api/health` answers the same questions without a login, and

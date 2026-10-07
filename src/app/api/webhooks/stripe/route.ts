@@ -3,7 +3,7 @@ import { readStripeConfigFromEnv } from '@/server/billing/stripe'
 import {
   WebhookSignatureError,
   handleStripeEvent,
-  verifyStripeSignature,
+  verifyStripeSignatureAgainstAny,
 } from '@/server/billing/webhooks'
 
 /**
@@ -13,6 +13,11 @@ import {
  * the only way that matters here: the signature over the exact bytes we
  * received. `request.text()` is deliberate; parsing the JSON first and
  * re-serializing it would change the bytes and break verification.
+ *
+ * Both populations of event land here: this platform's own subscriptions, and
+ * customer payments on a company's connected account. They arrive from two
+ * separately registered Stripe endpoints with two different signing secrets,
+ * so verification is tried against both.
  */
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -32,7 +37,11 @@ export async function POST(request: Request) {
 
   let event
   try {
-    event = verifyStripeSignature({ rawBody, signature, secret: config.webhookSecret })
+    event = verifyStripeSignatureAgainstAny({
+      rawBody,
+      signature,
+      secrets: [config.webhookSecret, config.connectWebhookSecret],
+    })
   } catch (error) {
     if (error instanceof WebhookSignatureError) {
       // 400 tells Stripe not to retry: a bad signature will not become good.
