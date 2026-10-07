@@ -24,6 +24,8 @@ import {
 import { JobTabs, type JobTab } from './tabs'
 import { JobStatusActions } from './status-actions'
 import { ApprovedEstimate } from './approved-estimate'
+import { roleCan } from '@/lib/rbac'
+import { RescheduleControl } from './reschedule'
 import { ReviewRequestPanel } from './review-request'
 import { loadReviewContext } from '@/server/communications/review-requests'
 import { PhotoGrid } from '@/components/app/photo-grid'
@@ -56,6 +58,12 @@ export default async function JobDetailPage({
   const tab: JobTab = ['door', 'photos', 'notes'].includes(rawTab ?? '')
     ? (rawTab as JobTab)
     : 'job'
+
+  // The same permission the action enforces. Hiding the control from someone
+  // who cannot use it is courtesy; the action is what actually stops them.
+  // Finished work is excluded for the same reason the service refuses it —
+  // a job that already happened does not have a future time.
+  const canReschedule = roleCan(session.role, 'job:write')
 
   // The tenant-scoped client makes this findUnique a no-match for any job
   // belonging to another organization, so a guessed id returns 404.
@@ -180,20 +188,36 @@ export default async function JobDetailPage({
 
         {tab === 'job' ? (
           <>
-            {job.scheduledStart ? (
-              <Card>
-                <DataGrid>
-                  <DataPoint
-                    label="Scheduled"
-                    value={`${formatDate(job.scheduledStart, session.timezone)} · ${formatTime(job.scheduledStart, session.timezone)}`}
+            {/*
+              Shown even with no time on it: a job nobody has scheduled is
+              exactly the one somebody needs to schedule, and hiding the card
+              hid the only way to do it.
+            */}
+            <Card>
+              <DataGrid>
+                <DataPoint
+                  label="Scheduled"
+                  value={
+                    job.scheduledStart
+                      ? `${formatDate(job.scheduledStart, session.timezone)} · ${formatTime(job.scheduledStart, session.timezone)}`
+                      : 'Not scheduled'
+                  }
+                />
+                <DataPoint
+                  label="Technician"
+                  value={job.assignedTo ? job.assignedTo.firstName : 'Unassigned'}
+                />
+              </DataGrid>
+              {canReschedule && job.status !== 'COMPLETED' && job.status !== 'CANCELLED' ? (
+                <div className="mt-4 border-t border-hairline pt-4">
+                  <RescheduleControl
+                    jobId={job.id}
+                    scheduledStart={job.scheduledStart?.toISOString() ?? null}
+                    timezone={session.timezone}
                   />
-                  <DataPoint
-                    label="Technician"
-                    value={job.assignedTo ? job.assignedTo.firstName : 'Unassigned'}
-                  />
-                </DataGrid>
-              </Card>
-            ) : null}
+                </div>
+              ) : null}
+            </Card>
 
             {job.reportedIssue ? (
               <Card>
