@@ -2,6 +2,7 @@ import type { SubscriptionStatus } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { recordAudit } from '@/lib/audit'
 import type { AuthenticatedUser } from '@/lib/session'
+import { discountedMonthlyCents } from '@/server/billing/commissions'
 
 /**
  * Platform administration.
@@ -55,7 +56,7 @@ export async function platformMetrics(): Promise<PlatformMetrics> {
     prisma.subscription.groupBy({ by: ['status'], _count: true }),
     prisma.subscription.findMany({
       where: { status: { in: ['ACTIVE', 'PAST_DUE'] } },
-      select: { priceCents: true, discountPercent: true },
+      select: { priceCents: true, billingInterval: true, discountPercent: true },
     }),
     prisma.user.count(),
     prisma.job.count(),
@@ -68,11 +69,13 @@ export async function platformMetrics(): Promise<PlatformMetrics> {
   const countFor = (status: SubscriptionStatus) =>
     byStatus.find((row) => row.status === status)?._count ?? 0
 
-  // Recurring revenue counts what is actually billing, net of any discount.
-  const monthlyRecurringCents = activeSubs.reduce((sum, subscription) => {
-    const discount = subscription.discountPercent ?? 0
-    return sum + Math.round(subscription.priceCents * ((100 - discount) / 100))
-  }, 0)
+  // Recurring revenue counts what is actually billing, net of any discount,
+  // normalised to a month: an annual subscriber's whole year is not one month
+  // of revenue.
+  const monthlyRecurringCents = activeSubs.reduce(
+    (sum, subscription) => sum + discountedMonthlyCents(subscription),
+    0,
+  )
 
   return {
     totalCompanies,

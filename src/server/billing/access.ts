@@ -1,4 +1,5 @@
 import type { Subscription, SubscriptionStatus } from '@prisma/client'
+import { currentPriceLabel } from '@/lib/pricing'
 
 /**
  * What an account is allowed to do, given its subscription.
@@ -67,12 +68,17 @@ export interface AccessState {
   needsActivation: boolean
 }
 
-/** The message shown when a mutation is blocked. Deliberately calm. */
+/**
+ * The messages shown when a mutation is blocked. Deliberately calm, and
+ * deliberately built from `currentOffer()` rather than a typed-in price: an
+ * owner reading "activate for $39.99/month" while the site advertises
+ * $249/year would not know which number to believe.
+ */
 export const RESTRICTED_MESSAGE =
-  'Your Garage Door HQ trial has ended. Your data is safe. Activate for $39.99/month to continue running your business.'
+  `Your Garage Door HQ trial has ended. Your data is safe. Activate for ${currentPriceLabel()} to continue running your business.`
 
 export const CANCELLED_MESSAGE =
-  'Your Garage Door HQ subscription has been cancelled. Your data is safe and stays visible. Activate for $39.99/month to start working again.'
+  `Your Garage Door HQ subscription has been cancelled. Your data is safe and stays visible. Activate for ${currentPriceLabel()} to start working again.`
 
 type SubscriptionLike = Pick<
   Subscription,
@@ -249,8 +255,8 @@ export function billingNotice(
         access.trialDaysLeft === 0
           ? 'Your trial ends today'
           : `Trial ends in ${access.trialDaysLeft} ${access.trialDaysLeft === 1 ? 'day' : 'days'}`,
-      body: 'Everything is included for $39.99/month. No per-user fee, no technician fee.',
-      cta: 'Activate Garage Door HQ — $39.99/month',
+      body: `Everything is included for ${currentPriceLabel()}. No per-user fee, no technician fee.`,
+      cta: `Activate Garage Door HQ — ${currentPriceLabel()}`,
     }
   }
 

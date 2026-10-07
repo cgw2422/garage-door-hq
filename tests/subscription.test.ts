@@ -7,6 +7,7 @@ import {
 } from '@/server/billing/access'
 import { statusFromStripe } from '@/server/billing/service'
 import { createTestCompany } from './helpers'
+import { currentOffer, currentPriceLabel } from '@/lib/pricing'
 
 /**
  * Subscription enforcement.
@@ -53,7 +54,7 @@ describe('during a trial', () => {
     const notice = billingNotice(access)
     expect(notice).not.toBeNull()
     expect(notice!.tone).toBe('warning')
-    expect(notice!.cta).toContain('$39.99')
+    expect(notice!.cta).toContain(currentPriceLabel())
   })
 
   it('counts the last day as today rather than zero days ago', () => {
@@ -87,7 +88,7 @@ describe('when the trial runs out', () => {
       NOW,
     )
     expect(access.restrictionReason).toContain('Your data is safe')
-    expect(access.restrictionReason).toContain('$39.99')
+    expect(access.restrictionReason).toContain(currentPriceLabel())
     // Nothing that reads like the data is at risk.
     expect(access.restrictionReason?.toLowerCase()).not.toContain('delete')
     expect(access.restrictionReason?.toLowerCase()).not.toContain('lost')
@@ -202,7 +203,7 @@ describe('the real subscription a company gets at signup', () => {
     })
     expect(row.status).toBe('TRIALING')
     expect(row.trialEndsAt).not.toBeNull()
-    expect(row.priceCents).toBe(3999)
+    expect(row.priceCents).toBe(currentOffer().priceCents)
 
     expect(accessStateFor(row).level).toBe('full')
   })

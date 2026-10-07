@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { prisma } from '@/lib/db'
 import { applyCompanySize, createCompany, registerOwner } from '@/server/organizations/onboarding'
 import { trialDays } from '@/server/organizations/provision'
+import { currentOffer } from '@/lib/pricing'
 
 /**
  * Signup and provisioning. The behaviour worth protecting: a new account is
@@ -77,7 +78,7 @@ describe('provisioning a new company', () => {
     expect(sequences).toBe(5)
 
     expect(subscription.status).toBe('TRIALING')
-    expect(subscription.priceCents).toBe(3999)
+    expect(subscription.priceCents).toBe(currentOffer().priceCents)
     const days = Math.round(
       (subscription.trialEndsAt!.getTime() - subscription.createdAt.getTime()) / 86_400_000,
     )

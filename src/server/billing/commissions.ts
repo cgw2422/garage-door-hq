@@ -97,6 +97,34 @@ export async function recordCommissionForPeriod(params: {
  * whole business — and is only ever called from a route that has already
  * checked for platform staff.
  */
+/**
+ * What a subscription is worth per month, whatever it bills on.
+ *
+ * Annual subscribers pay once a year; counting that whole amount as monthly
+ * revenue would overstate MRR, and the commission calculated from it, by
+ * twelve. Rounded to the cent, which loses at most a few cents a year per
+ * company and keeps every downstream figure an integer.
+ */
+export function monthlyEquivalentCents(
+  subscription: { priceCents: number; billingInterval: string } | null | undefined,
+): number {
+  if (!subscription) return 0
+  if (subscription.billingInterval === 'year') return Math.round(subscription.priceCents / 12)
+  return subscription.priceCents
+}
+
+/** The same figure, net of any platform-granted discount. */
+export function discountedMonthlyCents(
+  subscription:
+    | { priceCents: number; billingInterval: string; discountPercent?: number | null }
+    | null
+    | undefined,
+): number {
+  if (!subscription) return 0
+  const discount = subscription.discountPercent ?? 0
+  return Math.round((monthlyEquivalentCents(subscription) * (100 - discount)) / 100)
+}
+
 export async function affiliateSummaries(): Promise<CommissionSummary[]> {
   const affiliates = await prisma.affiliate.findMany({
     orderBy: { createdAt: 'asc' },
@@ -110,7 +138,14 @@ export async function affiliateSummaries(): Promise<CommissionSummary[]> {
           organizationId: true,
           organization: {
             select: {
-              subscription: { select: { status: true, priceCents: true, complimentaryUntil: true } },
+              subscription: {
+                select: {
+                  status: true,
+                  priceCents: true,
+                  billingInterval: true,
+                  complimentaryUntil: true,
+                },
+              },
             },
           },
         },
@@ -134,8 +169,12 @@ export async function affiliateSummaries(): Promise<CommissionSummary[]> {
       return false
     })
 
+    // Monthly-equivalent, not the invoice amount. An annual subscriber pays
+    // once and is worth a twelfth of it per month; summing the yearly figure
+    // into MRR would overstate both the platform's revenue and the commission
+    // owed on it by twelve.
     const attributedMrrCents = paying.reduce(
-      (sum, referral) => sum + (referral.organization.subscription?.priceCents ?? 0),
+      (sum, referral) => sum + monthlyEquivalentCents(referral.organization.subscription),
       0,
     )
 

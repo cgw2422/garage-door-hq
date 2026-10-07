@@ -1,6 +1,7 @@
 import { Prisma, type CompanySize } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { STARTER_CATALOG, STARTER_JOB_TYPES, type Catalog } from './starter-catalog'
+import { TRIAL_DAYS, currentOffer } from '@/lib/pricing'
 
 /**
  * Everything a brand-new garage door company needs to be useful on day one:
@@ -12,7 +13,15 @@ import { STARTER_CATALOG, STARTER_JOB_TYPES, type Catalog } from './starter-cata
  * failed signup, because the owner cannot tell what is missing.
  */
 
-export const DEFAULT_TRIAL_DAYS = 14
+/**
+ * The trial length, from the advertised offer.
+ *
+ * `trialEndsAt` is computed once at provisioning and stored, so shortening the
+ * advertised trial affects accounts created afterwards and leaves every
+ * existing trial exactly where it was. The environment override stays for
+ * staging, where a one-day trial is useful for exercising expiry.
+ */
+export const DEFAULT_TRIAL_DAYS = TRIAL_DAYS
 
 export function trialDays(): number {
   const configured = Number(process.env.TRIAL_DAYS)
@@ -90,8 +99,9 @@ export async function provisionOrganization(input: ProvisionInput) {
           subscription: {
             create: {
               status: 'TRIALING',
-              planCode: 'standard-monthly',
-              priceCents: 3999,
+              planCode: currentOffer().isFounding ? 'founding-annual' : 'standard-monthly',
+              billingInterval: currentOffer().interval,
+              priceCents: currentOffer().priceCents,
               trialEndsAt,
             },
           },

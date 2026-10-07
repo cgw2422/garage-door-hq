@@ -9,6 +9,11 @@ import {
 import { authSecretConfigured } from '@/lib/readiness'
 import { email } from '@/server/email'
 import { readStripeConfigFromEnv } from '@/server/billing/stripe'
+import {
+  currentPriceLabel,
+  foundingPriceMisconfigured,
+  stripePriceIdForOffer,
+} from '@/lib/pricing'
 import { storageDriverName } from '@/server/storage'
 
 /**
@@ -254,17 +259,25 @@ function stripeChecks(isProduction: boolean): Check[] {
   const live = config.secretKey.startsWith('sk_live_') || config.secretKey.startsWith('rk_live_')
   const modeMatches = live === isProduction
 
+  // The price Checkout would actually use for the offer the site advertises.
+  // A founding offer running against the monthly price id is the quiet failure
+  // worth naming here: Checkout works, and charges the wrong amount.
+  const offerPriceId = stripePriceIdForOffer()
+  const foundingUnpriced = foundingPriceMisconfigured() && offerPriceId !== null
+
   const billing: Check = {
     label: 'Stripe Billing',
-    health: !config.priceId ? 'missing' : modeMatches ? 'ok' : 'wrong',
-    detail: !config.priceId
-      ? `Connected in ${live ? 'live' : 'test'} mode, but no $39.99 price is set.`
-      : modeMatches
-        ? `Connected in ${live ? 'live' : 'test'} mode, with a price configured.`
-        : live
+    health: !offerPriceId ? 'missing' : foundingUnpriced || !modeMatches ? 'wrong' : 'ok',
+    detail: !offerPriceId
+      ? `Connected in ${live ? 'live' : 'test'} mode, but no subscription price is set.`
+      : !modeMatches
+        ? live
           ? 'A LIVE key is configured outside production. Real cards would be charged.'
-          : 'Production is in TEST mode. No real payment will be taken.',
-    variables: ['STRIPE_SECRET_KEY', 'STRIPE_PRICE_ID_STANDARD'],
+          : 'Production is in TEST mode. No real payment will be taken.'
+        : foundingUnpriced
+          ? `The site advertises ${currentPriceLabel()}, but no annual price id is set, so Checkout would charge the standard monthly price. Set STRIPE_PRICE_ID_FOUNDING_ANNUAL.`
+          : `Connected in ${live ? 'live' : 'test'} mode, charging ${currentPriceLabel()}.`,
+    variables: ['STRIPE_SECRET_KEY', 'STRIPE_PRICE_ID_STANDARD', 'STRIPE_PRICE_ID_FOUNDING_ANNUAL'],
   }
 
   const webhook: Check = {

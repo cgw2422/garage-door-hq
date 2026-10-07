@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { requireSession } from '@/lib/session'
 import { formatDate } from '@/server/jobs/queries'
+import { currentPriceLabel } from '@/lib/pricing'
 import { OnboardingSteps } from '../steps'
 import { SubmitButton } from '@/components/ui/submit-button'
 import { CheckIcon } from '@/components/ui/icons'
@@ -61,8 +62,8 @@ export default async function OnboardingReadyPage() {
 
       {subscription?.trialEndsAt ? (
         <p className="mt-3 text-center text-xs text-ink-subtle">
-          Free trial through {formatDate(subscription.trialEndsAt, session.timezone)} · then
-          $39.99/month, everything included
+          Free trial through {formatDate(subscription.trialEndsAt, session.timezone)} · then{' '}
+          {currentPriceLabel()}, everything included
         </p>
       ) : null}
 

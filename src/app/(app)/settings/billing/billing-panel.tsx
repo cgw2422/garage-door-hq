@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react'
 import { Alert } from '@/components/ui/alert'
+import { currentPriceLabel } from '@/lib/pricing'
 import { SubmitButton } from '@/components/ui/submit-button'
 import type { FormState } from '@/lib/form'
 import { openBillingPortalAction, startSubscriptionAction } from './actions'
@@ -21,7 +22,7 @@ export function StartSubscriptionButton({ disabled, reason }: { disabled: boolea
     <form action={formAction} className="space-y-2.5">
       {state.error ? <Alert>{state.error}</Alert> : null}
       <SubmitButton size="lg" fullWidth disabled={disabled} pendingLabel="Opening checkout…">
-        Activate Garage Door HQ — $39.99/month
+        Activate Garage Door HQ — {currentPriceLabel()}
       </SubmitButton>
       {disabled && reason ? (
         <p className="text-center text-xs leading-relaxed text-ink-subtle">{reason}</p>
