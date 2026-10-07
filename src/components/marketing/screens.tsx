@@ -39,6 +39,7 @@ export const SCREENS = {
   'presentation-signature': { width: 780, height: 1688 },
   'spring-lookup-empty': { width: 780, height: 1688 },
   'spring-lookup': { width: 780, height: 1688 },
+  'spring-lookup-matches': { width: 780, height: 1688 },
   'truck-inventory': { width: 780, height: 1688 },
   customers: { width: 780, height: 1688 },
   customer: { width: 780, height: 1688 },
