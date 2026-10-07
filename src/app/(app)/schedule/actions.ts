@@ -32,6 +32,9 @@ export async function rescheduleJobAction(
 
   revalidatePath('/schedule')
   revalidatePath('/today')
+  // Rescheduling is reachable from the job itself now, not only the calendar.
+  revalidatePath('/jobs')
+  revalidatePath('/jobs/[id]', 'page')
   return { ok: true }
 }
 

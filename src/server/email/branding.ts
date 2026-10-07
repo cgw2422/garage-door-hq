@@ -30,7 +30,7 @@ export interface SenderBranding {
 
 export interface PlatformBranding {
   productName: string
-  /** The authenticated envelope domain, e.g. "mail.garagedoorhq.com". */
+  /** The authenticated envelope domain, e.g. "mail.thegaragedoorhq.com". */
   fromEmail: string
   /** Used for messages that are genuinely from us: password resets. */
   fromName: string
@@ -52,7 +52,7 @@ export function platformBranding(): PlatformBranding {
 /**
  * The from-header for a message sent on a company's behalf.
  *
- * "ABC Garage Doors" <no-reply@garagedoorhq.com> — their name, our
+ * "ABC Garage Doors" <no-reply@thegaragedoorhq.com> — their name, our
  * authenticated domain.
  */
 export function senderFor(branding: SenderBranding) {

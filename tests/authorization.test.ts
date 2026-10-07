@@ -68,6 +68,8 @@ const PUBLIC_ACTIONS: Record<string, string> = {
     'The invitee has no account yet; the emailed token is the credential, and guessing is rate limited.',
   'src/app/(app)/more/actions.ts: signOutAction':
     'Ending a session protects nothing; a caller with no session simply has nothing to end.',
+  'src/app/(account)/account/actions.ts: signOutAction':
+    'The same, for the account screen. Platform staff cannot reach (app)/more, so without this one they had no way to sign out at all.',
   'src/app/(auth)/forgot/actions.ts: requestResetAction':
     'Asking for a reset link needs no account, by definition. Rate limited by address and by mailbox, and it answers identically whether or not the address exists.',
   'src/app/(portal)/p/actions.ts: portalStartPaymentAction':

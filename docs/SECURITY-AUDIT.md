@@ -587,5 +587,5 @@ npm run check:migrations       # what can lose data
 npm run check:secrets          # working tree
 node scripts/scan-secrets.mjs --history   # every commit
 npm audit --omit=dev           # production dependencies
-npm run check:health -- https://app.garagedoorhq.com --expect production
+npm run check:health -- https://app.thegaragedoorhq.com --expect production
 ```

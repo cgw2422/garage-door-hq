@@ -26,7 +26,8 @@
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:health": "node scripts/health-check.mjs",
     "check:secrets": "node scripts/scan-secrets.mjs",
-    "adversarial": "node scripts/adversarial.mjs"
+    "adversarial": "node scripts/adversarial.mjs",
+    "video": "node scripts/demo-video.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -64,6 +65,8 @@
   },
   "overrides": {
     "postcss": "^8.5.28",
-    "deepmerge-ts": "^8.0.2"
+    "deepmerge-ts": "^8.0.2",
+    "sharp": "^0.35.5",
+    "source-map-js": "^1.2.2"
   }
 }

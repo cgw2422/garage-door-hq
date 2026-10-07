@@ -6,7 +6,7 @@ Everything here exists to keep the other two away from it.
 ```
   local              staging                          production
   ─────              ───────                          ──────────
-  laptop /           staging.garagedoorhq.com         app.garagedoorhq.com
+  laptop /           staging.thegaragedoorhq.com         app.thegaragedoorhq.com
   Claude dev         test data only                   REAL CUSTOMERS
 
   own Postgres       own Postgres                     own Postgres
@@ -72,8 +72,8 @@ Three services, each with its own Postgres and its own variables.
 - **Variables**:
   ```
   APP_ENV=staging
-  APP_URL=https://staging.garagedoorhq.com
-  NEXT_PUBLIC_APP_URL=https://staging.garagedoorhq.com
+  APP_URL=https://staging.thegaragedoorhq.com
+  NEXT_PUBLIC_APP_URL=https://staging.thegaragedoorhq.com
   AUTH_SECRET=<openssl rand -base64 32 — its own, not production's>
   DATABASE_URL=<Railway reference to the STAGING Postgres>
   STRIPE_SECRET_KEY=sk_test_...
@@ -103,7 +103,7 @@ Three services, each with its own Postgres and its own variables.
 
 ### Custom domains
 
-`staging.garagedoorhq.com` → staging service. `app.garagedoorhq.com` →
+`staging.thegaragedoorhq.com` → staging service. `app.thegaragedoorhq.com` →
 production service. Set `APP_URL` to match; a mismatch mails customers links to
 the wrong host.
 
@@ -222,7 +222,7 @@ psql "$RECOVERY_DATABASE_URL" -c '
 # 4. Point production at it: change DATABASE_URL on the production service.
 # 5. Redeploy. `prisma migrate deploy` brings the restored schema up to the
 #    running code on boot.
-# 6. node scripts/health-check.mjs https://app.garagedoorhq.com --expect production
+# 6. node scripts/health-check.mjs https://app.thegaragedoorhq.com --expect production
 ```
 
 Keep the damaged database. Do not delete it until the restore is confirmed —
@@ -308,7 +308,7 @@ Between the two, a rollback is free. In one release, it is a restore.
 
 ```bash
 # Staging only — production refuses.
-curl -X POST "https://staging.garagedoorhq.com/api/admin/seed-demo?replace=1" \
+curl -X POST "https://staging.thegaragedoorhq.com/api/admin/seed-demo?replace=1" \
   -H "x-seed-token: $DEMO_SEED_TOKEN"
 ```
 
@@ -319,8 +319,8 @@ Remove `DEMO_SEED_TOKEN` afterwards. With it unset the route 404s.
 ## 8. Checking where you are
 
 ```bash
-node scripts/health-check.mjs https://app.garagedoorhq.com --expect production
-node scripts/health-check.mjs https://staging.garagedoorhq.com --expect staging
+node scripts/health-check.mjs https://app.thegaragedoorhq.com --expect production
+node scripts/health-check.mjs https://staging.thegaragedoorhq.com --expect staging
 ```
 
 Or just look: staging has an amber bar across the top, an amber icon on the

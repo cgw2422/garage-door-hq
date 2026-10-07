@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { PASSWORD_MIN_LENGTH } from '@/lib/password-policy'
 import { failure, parseForm, type FormState } from '@/lib/form'
 import { clientAddress, enforceRateLimit } from '@/lib/rate-limit'
+import { signOut } from '@/lib/auth'
 import { requireUser } from '@/lib/session'
 import { changePassword } from '@/server/auth/change-password'
 
@@ -63,4 +64,15 @@ export async function changePasswordAction(
   // notice — "Your password has been changed. Sign in with the new one." — which
   // is already the right sentence for this, so it does not need a second one.
   redirect('/login?reset=1')
+}
+
+/**
+ * Sign out, from anywhere.
+ *
+ * The only other one lives under `(app)/more`, which platform staff cannot
+ * reach — `requireSession` sends them to `/admin` — so a platform
+ * administrator had no way to end their own session short of clearing cookies.
+ */
+export async function signOutAction() {
+  await signOut({ redirectTo: '/login' })
 }

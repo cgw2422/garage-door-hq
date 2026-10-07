@@ -526,7 +526,13 @@ function Shell({
     <div className="min-h-dvh bg-surface">
       <div
         className={cn(
-          'safe-top relative flex items-center justify-center gap-3 border-b border-hairline bg-surface px-5 py-4',
+          'safe-top relative flex items-center justify-center gap-3 border-b border-hairline bg-surface py-4',
+          // Symmetric padding so the company's name stays centred, and wide
+          // enough that it clears the exit control rather than running under
+          // it — the control is positioned absolutely, so nothing else keeps
+          // them apart. "Precision Garage Door Services" is not an unusually
+          // long name, and it collided.
+          exit ? 'px-24' : 'px-5',
           bare && 'border-b-0',
         )}
       >
@@ -558,7 +564,9 @@ function Shell({
           />
         ) : null}
         <div className="text-center">
-          <p className="text-[1.0625rem] font-bold leading-tight text-ink">{company.name}</p>
+          <p className="text-balance text-[1.0625rem] font-bold leading-tight text-ink">
+            {company.name}
+          </p>
           {company.phone ? <p className="num text-sm text-ink-muted">{company.phone}</p> : null}
         </div>
       </div>

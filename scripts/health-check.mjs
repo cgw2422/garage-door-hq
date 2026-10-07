@@ -7,8 +7,8 @@
  * signed off from a staging URL.
  *
  * Usage:
- *   node scripts/health-check.mjs https://app.garagedoorhq.com --expect production
- *   node scripts/health-check.mjs https://staging.garagedoorhq.com --expect staging
+ *   node scripts/health-check.mjs https://app.thegaragedoorhq.com --expect production
+ *   node scripts/health-check.mjs https://staging.thegaragedoorhq.com --expect staging
  *
  * Exit 0 when the deployment is ready and is the expected environment.
  */
