@@ -25,9 +25,9 @@ Setup instructions: `docs/BETA-SETUP.md`. Security findings:
 Not "the service exists in Railway" — you signed in.
 
 ### A2. Production deployed · **YOU** · BLOCKER
-- [ ] `https://app.thegaragedoorhq.com` loads over HTTPS.
+- [ ] `https://thegaragedoorhq.com` loads over HTTPS.
 - [ ] `/admin/system` shows **Environment: PRODUCTION · Declared**.
-- [ ] `node scripts/health-check.mjs https://app.thegaragedoorhq.com --expect production`
+- [ ] `node scripts/health-check.mjs https://thegaragedoorhq.com --expect production`
       exits 0.
 
 That command fails if production is running with local disk, without an email
@@ -134,7 +134,7 @@ On **production**:
 - [ ] Send yourself an estimate from production, to a **real** mailbox.
 - [ ] It arrives. **No** `[STAGING]` tag.
 - [ ] From-name is the garage door company, reply-to is their address.
-- [ ] The link opens the estimate on `app.thegaragedoorhq.com`.
+- [ ] The link opens the estimate on `thegaragedoorhq.com`.
 - [ ] It is in **Inbox**, not spam. If spam: recheck SPF/DKIM (§7 of the setup
       guide) and add DMARC.
 - [ ] Repeat for an invoice and a team invitation.
@@ -167,13 +167,17 @@ It refuses to go green on a schedule alone. *Code side:* DONE —
 
 ## D. Money
 
-### D1. A $39.99 subscription, real production checkout · **YOU** · BLOCKER
+### D1. A real subscription, real production checkout · **YOU** · BLOCKER
 - [ ] Sign up a company on **production** (yours is fine).
 - [ ] Settings → Billing → Subscribe.
 - [ ] Pay with a **real card**. Not a test card — this is live mode.
-- [ ] $39.99 appears in your Stripe **live** dashboard.
+- [ ] The charge in your Stripe **live** dashboard is **the price the website
+      advertises** — $249.00 yearly while the Founding Member offer runs, not
+      $39.99 monthly. A monthly charge here means
+      `STRIPE_PRICE_ID_FOUNDING_ANNUAL` is not set and Checkout fell back.
+      `/admin/system` reports that as Wrong; check it before blaming the card.
 - [ ] Refund yourself afterwards if you like; the point is that it went
-      through.
+      through, at the right price.
 
 ### D2. The webhook changed the account state · **YOU** · BLOCKER
 - [ ] Immediately after D1, the app shows the account **Active** — without you
@@ -232,7 +236,7 @@ The one to spend proper time on, with someone else holding the phone.
 
 - [ ] Estimate → **Present to Customer**. Handover screen first.
 - [ ] Hand the phone to someone and ask them to *try to get out of it*.
-- [ ] Type `app.thegaragedoorhq.com/today` in the address bar → **comes back to
+- [ ] Type `thegaragedoorhq.com/today` in the address bar → **comes back to
       the presentation**.
 - [ ] Same for `/customers`, `/money`, `/settings`, `/admin`.
 - [ ] Back gesture → stays inside.

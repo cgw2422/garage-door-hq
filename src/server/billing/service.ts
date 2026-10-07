@@ -6,9 +6,10 @@ import type { AppSession } from '@/lib/session'
 import { BillingError, BillingNotConfiguredError, readStripeConfigFromEnv, stripe } from './stripe'
 import { accessStateFor, type AccessState } from './access'
 import { platformBranding } from '@/server/email/branding'
+import { CURRENCY, currentOffer, stripePriceIdForOffer } from '@/lib/pricing'
 
 /**
- * Garage Door HQ's own subscription: one plan, $39.99/month.
+ * Garage Door HQ's own subscription: one plan, priced by `@/lib/pricing`.
  *
  * The rule that shapes everything here: **Stripe is the source of truth for a
  * paid subscription.** This app never marks an account active because a
@@ -21,11 +22,20 @@ import { platformBranding } from '@/server/email/branding'
  * before any payment relationship does.
  */
 
+/**
+ * The plan as the billing screen describes it. The numbers come from the
+ * advertised offer; what an existing subscriber is actually charged comes from
+ * Stripe and is read off their own subscription row, never from here.
+ */
 export const PLAN = {
   name: 'Garage Door HQ',
-  priceCents: 3999,
-  currency: 'USD',
-  interval: 'month' as const,
+  get priceCents() {
+    return currentOffer().priceCents
+  },
+  get interval() {
+    return currentOffer().interval
+  },
+  currency: CURRENCY,
   blurb: 'Everything included. No per-user fee. No technician fee.',
 }
 
@@ -68,7 +78,7 @@ export async function loadBillingOverview(session: AppSession): Promise<BillingO
     providerCustomerId: subscription?.providerCustomerId ?? null,
     providerSubscriptionId: subscription?.providerSubscriptionId ?? null,
     billingConfigured: config !== null,
-    priceMissing: config !== null && !config.priceId,
+    priceMissing: config !== null && !stripePriceIdForOffer(),
   }
 }
 
@@ -125,7 +135,13 @@ export async function createCheckoutSession(
 ): Promise<{ url: string }> {
   const config = readStripeConfigFromEnv()
   if (!config) throw new BillingNotConfiguredError('Billing is not connected yet.')
-  if (!config.priceId) {
+
+  // The price for whatever is currently advertised. While the founding offer
+  // runs that is the annual price; with the offer off it is the standard
+  // monthly one. Resolved here rather than baked into the Stripe config so the
+  // offer and the charge cannot drift apart.
+  const priceId = stripePriceIdForOffer()
+  if (!priceId) {
     throw new BillingError(
       'The subscription price is not configured. Set STRIPE_PRICE_ID_STANDARD.',
     )
@@ -152,7 +168,7 @@ export async function createCheckoutSession(
   const checkout = await stripe().checkout.sessions.create({
     mode: 'subscription',
     customer: customerId,
-    line_items: [{ price: config.priceId, quantity: 1 }],
+    line_items: [{ price: priceId, quantity: 1 }],
     // Stripe appends the session id so the return page can confirm against
     // Stripe rather than believing the redirect.
     success_url: `${platform.appUrl}${returnPath}?checkout={CHECKOUT_SESSION_ID}`,
@@ -301,6 +317,9 @@ export async function syncFromStripe(
           : stripeSubscription.customer.id,
       providerPriceId: item?.price?.id ?? existing.providerPriceId,
       priceCents: item?.price?.unit_amount ?? existing.priceCents,
+      // Stripe's own word for what that amount covers. Without it a $249/year
+      // subscriber reads as $249/month everywhere revenue is summed.
+      billingInterval: item?.price?.recurring?.interval ?? existing.billingInterval,
       currency: (item?.price?.currency ?? existing.currency).toUpperCase(),
       currentPeriodStart: periodStart ?? existing.currentPeriodStart,
       currentPeriodEnd: periodEnd ?? existing.currentPeriodEnd,

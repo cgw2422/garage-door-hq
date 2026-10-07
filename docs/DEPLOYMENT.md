@@ -63,7 +63,7 @@ precedence.
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` — reference the Postgres service, don't paste the string |
 | `AUTH_SECRET` | `openssl rand -base64 32` — not `NEXTAUTH_SECRET`, and not blank |
 | `AUTH_TRUST_HOST` | `true` |
-| `NEXT_PUBLIC_APP_URL` | the public address, e.g. `https://app.thegaragedoorhq.com` (baked at build time) |
+| `NEXT_PUBLIC_APP_URL` | the public address, e.g. `https://thegaragedoorhq.com` (baked at build time) |
 | `APP_URL` | optional; the same address, read at run time, and wins over the baked one |
 | `NEXT_PUBLIC_APP_NAME` | `Garage Door HQ` |
 
@@ -93,8 +93,9 @@ on screen. It never records a message as delivered that was not.
 
 ### Stripe — set before charging anyone
 
-`STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID_STANDARD`, `STRIPE_WEBHOOK_SECRET`, and
-`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
+`STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID_STANDARD`, `STRIPE_WEBHOOK_SECRET` and
+`STRIPE_CONNECT_WEBHOOK_SECRET`. There is no publishable key: every Stripe
+screen is hosted by Stripe, so the browser never loads Stripe.js.
 
 Point the Stripe webhook endpoint at `https://<your-domain>/api/webhooks/stripe`
 and copy its signing secret into `STRIPE_WEBHOOK_SECRET`. The webhook is the
@@ -107,7 +108,7 @@ why, and for who owns refunds, disputes and fees.
 
 ### Worth setting
 
-`TRIAL_DAYS` (default 14), `PLATFORM_ADMIN_EMAIL`, `DEMO_PASSWORD`,
+`TRIAL_DAYS` (an override; the default is in `src/lib/pricing.ts`), `PLATFORM_ADMIN_EMAIL`, `DEMO_PASSWORD`,
 `EMAIL_SUPPORT_ADDRESS`.
 
 ## Migrations

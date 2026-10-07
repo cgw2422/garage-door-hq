@@ -121,7 +121,7 @@ async function ReferredCompanies({ code }: { code: string }) {
       organization: {
         select: {
           name: true,
-          subscription: { select: { status: true, priceCents: true } },
+          subscription: { select: { status: true } },
         },
       },
     },

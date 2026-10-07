@@ -453,8 +453,9 @@ friends.
 **Nothing found. No rotation required.** `.env` has never been committed;
 `.env.example` holds only placeholders.
 
-The only `NEXT_PUBLIC_*` values are `APP_NAME`, `APP_URL` and
-`STRIPE_PUBLISHABLE_KEY` — all public by design. The adversarial run also
+The only `NEXT_PUBLIC_*` values are `APP_NAME` and `APP_URL`, both public by
+design. (`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` was read into the Stripe config
+and never used; it has since been removed.) The adversarial run also
 checks the rendered HTML for key prefixes and connection strings and finds
 none.
 
@@ -587,5 +588,5 @@ npm run check:migrations       # what can lose data
 npm run check:secrets          # working tree
 node scripts/scan-secrets.mjs --history   # every commit
 npm audit --omit=dev           # production dependencies
-npm run check:health -- https://app.thegaragedoorhq.com --expect production
+npm run check:health -- https://thegaragedoorhq.com --expect production
 ```

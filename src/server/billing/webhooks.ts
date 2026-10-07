@@ -74,17 +74,54 @@ export function verifyStripeSignature(params: {
   signature: string | null
   secret: string
 }): Stripe.Event {
+  return verifyStripeSignatureAgainstAny({ ...params, secrets: [params.secret] })
+}
+
+/**
+ * Verify against every signing secret this deployment holds.
+ *
+ * Stripe treats "events on your account" and "events on connected accounts" as
+ * two separate endpoints, each with its own signing secret, even when both
+ * point at this one URL. A delivery is signed with the secret of the endpoint
+ * it was sent to — so a deployment taking Connect payments has to try both.
+ * Checking only the platform secret rejects every customer payment with a 400,
+ * and 400 is the one answer Stripe does not retry: the money arrives in the
+ * company's Stripe account and the invoice here stays unpaid forever.
+ *
+ * Trying a second secret costs an HMAC on a body that is already in memory and
+ * reveals nothing: a wrong secret fails the same way whether it is tried first
+ * or last.
+ */
+export function verifyStripeSignatureAgainstAny(params: {
+  rawBody: string
+  signature: string | null
+  secrets: (string | null | undefined)[]
+}): Stripe.Event {
   if (!params.signature) {
     throw new WebhookSignatureError('Missing signature header.')
   }
-  try {
-    return stripe().webhooks.constructEvent(params.rawBody, params.signature, params.secret)
-  } catch (error) {
-    // Stripe's message names the reason (wrong secret, stale timestamp,
-    // tampered body). It is logged, never returned.
-    console.error('[stripe:webhook] signature verification failed', error)
-    throw new WebhookSignatureError('Signature verification failed.')
+
+  const secrets = [...new Set(params.secrets.filter((value): value is string => Boolean(value)))]
+  if (secrets.length === 0) {
+    throw new WebhookSignatureError('No signing secret is configured.')
   }
+
+  let lastError: unknown
+  for (const secret of secrets) {
+    try {
+      return stripe().webhooks.constructEvent(params.rawBody, params.signature, secret)
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  // Stripe's message names the reason (wrong secret, stale timestamp,
+  // tampered body). It is logged, never returned.
+  console.error(
+    `[stripe:webhook] signature verification failed against all ${secrets.length} configured secret(s)`,
+    lastError,
+  )
+  throw new WebhookSignatureError('Signature verification failed.')
 }
 
 /**

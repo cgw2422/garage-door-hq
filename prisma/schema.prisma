@@ -1863,6 +1863,10 @@ model Subscription {
 
   planCode        String  @default("standard-monthly")
   priceCents      Int     @default(3999)
+  /// What `priceCents` covers: "month" or "year". Written from Stripe's own
+  /// `price.recurring.interval` on sync, because summing a yearly price into a
+  /// monthly revenue figure overstates it twelvefold.
+  billingInterval String  @default("month")
   currency        String  @default("USD")
   discountPercent Int?
   discountCode    String?

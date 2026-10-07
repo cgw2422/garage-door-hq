@@ -17,25 +17,29 @@ account, and control of the DNS for `thegaragedoorhq.com`.
 
 | Host | Is | Served by |
 |---|---|---|
-| `thegaragedoorhq.com` | The public marketing site | Wherever you host it — **not Railway** |
-| `app.thegaragedoorhq.com` | The application | Railway, production environment |
-| `staging.thegaragedoorhq.com` | The application, for testing | Railway, staging environment |
+| `thegaragedoorhq.com` | Everything — the landing page and the application | Railway, production environment |
+| `staging.thegaragedoorhq.com` | The same application, for testing | Railway, staging environment |
 
-Every user signs in at `app.`, and every customer link — estimates, invoices,
-portal, password resets — is built from it. Nothing should be published on a
-Railway-generated `*.up.railway.app` address; those exist only to reach a
-deployment before its real domain is attached.
+One domain. The application serves its own landing page at `/`
+(`src/app/(marketing)/page.tsx`), so a visitor reads about the product, signs
+up, and is in the product, without ever changing host. Everything after sign-in
+— jobs, customers, estimates, `/admin` — is a path under the same name, and
+every customer link is built from it.
 
-Do **not** point the apex at Railway. It belongs to the marketing site, and the
-application never needs to answer on it.
+There is no `app.` subdomain and nothing needs one. Splitting the landing page
+onto a separate host would mean two origins, two certificates, and a referral
+cookie that does not follow a visitor from one to the other.
 
-**One thing the split breaks if you leave it:** affiliate links. The referral
-cookie is written by the application's middleware and is host-only, so a
-partner sharing `thegaragedoorhq.com/?ref=SKOOL` attributes nobody — the
-visitor lands on the marketing site, which never runs that code. Partner links
-must point at `app.thegaragedoorhq.com/?ref=CODE`, or the marketing site must
-carry `?ref=` through to its signup button. Silent when wrong, and what it
-costs is somebody's commission.
+Nothing should be published on a Railway-generated `*.up.railway.app` address;
+those exist only to reach a deployment before its real domain is attached.
+
+**Affiliate links work because of this.** The referral cookie is written by the
+application's middleware, so `thegaragedoorhq.com/?ref=SKOOL` sets it on the
+first page a partner's visitor lands on, and it is still there sixty days later
+when they sign up. That only holds while the landing page and the application
+are the same host — if the marketing site ever moves to something else, partner
+links have to target wherever the application lives, or attribution silently
+stops and what it costs is somebody's commission.
 
 ---
 
@@ -265,7 +269,12 @@ Start at `p=none`, watch the reports, tighten later.
 
 ---
 
-## 8. Stripe — the $39.99 product
+## 8. Stripe — the product and its two prices
+
+One product, two prices on it: the standard monthly price, and the Founding
+Member annual price the site currently advertises. Both exist in Stripe; which
+one Checkout uses is decided by `FOUNDING_OFFER_ACTIVE` in
+`src/lib/pricing.ts`.
 
 1. Stripe dashboard. **Check the Test/Live toggle before every step below.**
 2. **Live mode** → **Product catalogue** → **Add product**:
@@ -275,13 +284,27 @@ Start at `p=none`, watch the reports, tighten later.
    - Save.
 3. Open the price → copy the **Price ID** (`price_...`) → production variables
    as `STRIPE_PRICE_ID_STANDARD`.
-4. **Test mode** → repeat the whole thing → that price id goes in the **staging**
+4. On the same product, **Add another price**:
+   - **Recurring**, **$249.00**, **Yearly**, USD
+   - Save, open it, copy its **Price ID** → production variable
+     `STRIPE_PRICE_ID_FOUNDING_ANNUAL`.
+
+   A second price on the same product, not a second product. Existing
+   subscribers stay on whichever price they bought; adding one changes nothing
+   for them.
+5. **Test mode** → repeat both prices → those ids go in the **staging**
    variables. Different ids; do not mix them.
-5. **Developers → API keys**:
+
+**Why both.** The site advertises $249/year with a 7-day trial. If
+`STRIPE_PRICE_ID_FOUNDING_ANNUAL` is missing, Checkout falls back to the
+monthly price and charges $39.99/month to somebody who clicked a button
+offering $249/year. System Readiness reports that as **Wrong** and names the
+variable, rather than showing Stripe as connected.
+6. **Developers → API keys**:
    - Live **Secret key** (`sk_live_...`) → production only.
    - Test **Secret key** (`sk_test_...`) → staging only.
-   - The **Publishable key** is public by design and goes in
-     `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
+   - Ignore the **Publishable key**. Checkout and Connect onboarding are both
+     hosted by Stripe, so nothing in the browser loads Stripe.js.
 
    The application **refuses to start with a live key outside production**, so a
    mix-up in this direction fails loudly rather than charging somebody.
@@ -290,12 +313,18 @@ Start at `p=none`, watch the reports, tighten later.
 
 ## 9. Stripe webhooks
 
-Two endpoints, one per environment. Without these, someone can pay and their
-account never activates.
+**Two registrations per environment, at the same URL.** Stripe asks, when you
+add an endpoint, whether it listens to events on *your* account or on
+*connected* accounts. Those are two different endpoints with two different
+signing secrets even when the URL is identical, and one does not deliver the
+other's events. Your own subscriptions come from the first; a homeowner paying
+a company's invoice comes from the second. Register only the first and
+subscriptions work while customer payments never arrive.
 
 1. **Developers → Webhooks → Add endpoint**.
-2. **Production** (live mode):
-   - URL: `https://app.thegaragedoorhq.com/api/webhooks/stripe`
+2. **Production, your account** (live mode):
+   - Listen to: **Events on your account**
+   - URL: `https://thegaragedoorhq.com/api/webhooks/stripe`
    - Events:
      ```
      checkout.session.completed
@@ -307,22 +336,32 @@ account never activates.
      invoice.paid
      invoice.payment_failed
      invoice.payment_succeeded
+     ```
+   - Add endpoint → reveal the **Signing secret** (`whsec_...`) → production
+     variable `STRIPE_WEBHOOK_SECRET`.
+3. **Production, connected accounts** (live mode): add a *second* endpoint at
+   the same URL, listening to **Events on Connected accounts**, with:
+     ```
      payment_intent.succeeded
      charge.refunded
      account.updated
      ```
-   - Add endpoint → reveal the **Signing secret** (`whsec_...`) → production
-     variable `STRIPE_WEBHOOK_SECRET`.
-3. **Staging** (test mode): the same events, URL
-   `https://staging.thegaragedoorhq.com/api/webhooks/stripe`, its own signing
-   secret into the staging variable.
+   Its signing secret is a different `whsec_...` → production variable
+   `STRIPE_CONNECT_WEBHOOK_SECRET`.
+4. **Staging** (test mode): both registrations again, URL
+   `https://staging.thegaragedoorhq.com/api/webhooks/stripe`, their own two
+   signing secrets into the staging variables.
 
-The endpoint verifies that signature over the exact request bytes before
-parsing anything, and records every event id under a unique constraint, so a
-replay or a retry does nothing twice.
+The endpoint verifies the signature over the exact request bytes before parsing
+anything — against both configured secrets, since it cannot know in advance
+which registration a delivery came from — and records every event id under a
+unique constraint, so a replay or a retry does nothing twice.
 
-**Check it:** Stripe → the endpoint → **Send test webhook**. You should see a
-200. A 503 means `STRIPE_WEBHOOK_SECRET` is not set.
+**Check it:** Stripe → each endpoint → **Send test webhook**. Both should
+answer 200. A 503 means `STRIPE_WEBHOOK_SECRET` is not set at all. A 400 on the
+Connect endpoint means its secret is missing or wrong — and 400 is the one
+answer Stripe does not retry, so a Connect endpoint left at 400 loses customer
+payments silently.
 
 ---
 
@@ -337,12 +376,13 @@ this way.
    - Fill in your business details, support email and a statement descriptor.
      Connected companies see these during onboarding.
    - **Branding**: your logo and colour, so a technician recognises the flow.
-   - **Redirects**: add `https://app.thegaragedoorhq.com/settings/payments` and the
+   - **Redirects**: add `https://thegaragedoorhq.com/settings/payments` and the
      staging equivalent.
-3. **Connect webhooks**: if you register a separate Connect endpoint, put its
-   signing secret in `STRIPE_CONNECT_WEBHOOK_SECRET`. If you use one endpoint
-   for both, leave that variable unset — the application falls back to
-   `STRIPE_WEBHOOK_SECRET`.
+3. **Connect webhooks**: §9 step 3. The connected-accounts endpoint's own
+   signing secret goes in `STRIPE_CONNECT_WEBHOOK_SECRET`. Leaving it unset
+   makes the application fall back to `STRIPE_WEBHOOK_SECRET`, which is only
+   correct if Stripe genuinely issued you one secret for both — it normally
+   does not.
 4. Stripe will ask for your own business verification before live Connect
    works. **Start this early**; it can take a day or two.
 
@@ -354,12 +394,19 @@ DNS first, because it is the slowest thing here.
 
 1. Railway → **staging** environment → the service → **Settings → Networking →
    Custom Domain** → `staging.thegaragedoorhq.com`. Railway shows a CNAME target.
-2. Railway → **production** environment → the same → `app.thegaragedoorhq.com`.
+2. Railway → **production** environment → the same → `thegaragedoorhq.com`.
 3. At your DNS provider:
    ```
    staging.thegaragedoorhq.com   CNAME   <target Railway shows>
-   app.thegaragedoorhq.com       CNAME   <target Railway shows>
+   thegaragedoorhq.com           ALIAS   <target Railway shows>
    ```
+
+   The apex is the awkward one. A CNAME is not valid at the root of a zone, so
+   providers offer their own record for it — ALIAS, ANAME, or "CNAME
+   flattening" on Cloudflare — which resolves the target and answers with its
+   addresses. Use whichever yours calls it. If it offers none, Railway's A
+   record is the fallback, with the cost that a change on their side needs a
+   change on yours.
 4. Wait for Railway to show the certificate as issued.
 5. Set `APP_URL` and `NEXT_PUBLIC_APP_URL` on each service to match, exactly,
    with `https://` and no trailing slash. Every link that leaves the building
@@ -393,13 +440,13 @@ Legend: **required** · *recommended* · optional
 | *`EMAIL_FROM_NAME`* | `Garage Door HQ` | Type it |
 | **`STAGING_EMAIL_REDIRECT_TO`** | your own inbox | Type it — **or** `STAGING_EMAIL_ALLOWLIST` |
 | *`STRIPE_SECRET_KEY`* | `sk_test_...` | §8 — **test key only** |
-| *`STRIPE_PRICE_ID_STANDARD`* | test `price_...` | §8 |
+| *`STRIPE_PRICE_ID_STANDARD`* | test monthly `price_...` | §8 |
+| *`STRIPE_PRICE_ID_FOUNDING_ANNUAL`* | test annual `price_...` | §8 |
 | *`STRIPE_WEBHOOK_SECRET`* | staging `whsec_...` | §9 |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_test_...` | §8 — public by design |
 | `PLATFORM_ADMIN_EMAIL` | your address | Type it |
 | `DEMO_PASSWORD` | something you choose | So the demo does not use the repo's password |
 | `DEMO_SEED_TOKEN` | 32 random chars | Only while loading the demo. **Remove afterwards.** |
-| `TRIAL_DAYS` | `14` | Type it |
+| `TRIAL_DAYS` | unset on production; `1` on staging to test expiry | §8 — the real default is `TRIAL_DAYS` in `src/lib/pricing.ts` |
 
 **Do not set on staging:** `AUTH_URL`, `ALLOW_LOCAL_APP_URL`,
 `ALLOW_SEED_RESET`, any `sk_live_` key.
@@ -411,7 +458,7 @@ Legend: **required** · *recommended* · optional
 | **`APP_ENV`** | `production` | Type it. Without it, outbound email is held back. |
 | **`DATABASE_URL`** | reference | §3 — Add Reference → `production-db` |
 | **`AUTH_SECRET`** | 32 random bytes | `openssl rand -base64 32` — **its own, never staging's** |
-| **`APP_URL`** | `https://app.thegaragedoorhq.com` | §11 |
+| **`APP_URL`** | `https://thegaragedoorhq.com` | §11 |
 | **`NEXT_PUBLIC_APP_URL`** | the same | §11 |
 | **`STORAGE_DRIVER`** | `r2` | Type it |
 | **`R2_ACCOUNT_ID`** | Cloudflare account id | §6 |
@@ -423,15 +470,15 @@ Legend: **required** · *recommended* · optional
 | **`EMAIL_FROM_NAME`** | `Garage Door HQ` | Type it |
 | *`EMAIL_SUPPORT_ADDRESS`* | `support@thegaragedoorhq.com` | Reply-to on platform mail |
 | **`STRIPE_SECRET_KEY`** | `sk_live_...` | §8 |
-| **`STRIPE_PRICE_ID_STANDARD`** | live `price_...` | §8 |
+| **`STRIPE_PRICE_ID_STANDARD`** | live monthly `price_...` | §8 |
+| **`STRIPE_PRICE_ID_FOUNDING_ANNUAL`** | live annual `price_...` | §8 — Checkout uses this while the offer runs |
 | **`STRIPE_WEBHOOK_SECRET`** | production `whsec_...` | §9 |
-| *`STRIPE_CONNECT_WEBHOOK_SECRET`* | Connect `whsec_...` | §10 — omit to reuse the above |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_live_...` | §8 — public by design |
+| **`STRIPE_CONNECT_WEBHOOK_SECRET`** | Connect `whsec_...` | §9 — the connected-accounts endpoint's own secret |
 | **`PLATFORM_ADMIN_EMAIL`** | your address | Type it |
 | *`DEMO_PASSWORD`* | 12+ characters you choose | Only if you want the demo company here. The repo's default is refused |
 | *`BACKUP_SCHEDULE`* | e.g. `Daily 03:00 UTC, 30 days, Railway + weekly dump to R2` | §4 |
 | *`BACKUP_LAST_VERIFIED_RESTORE`* | e.g. `2026-09-17` | §5 |
-| `TRIAL_DAYS` | `14` | Type it |
+| `TRIAL_DAYS` | unset on production; `1` on staging to test expiry | §8 — the real default is `TRIAL_DAYS` in `src/lib/pricing.ts` |
 
 **Never set on production:** `AUTH_URL`, `ALLOW_LOCAL_APP_URL`,
 `ALLOW_SEED_RESET`, `STAGING_EMAIL_*`, any `sk_test_` key.
@@ -548,8 +595,9 @@ fine while that person is you and nobody else has the address.
 | Nobody receives email | No provider key, or the domain is not verified. |
 | Staging sends no email | Working as designed. Set `STAGING_EMAIL_REDIRECT_TO`. |
 | Subscriptions never activate | `STRIPE_WEBHOOK_SECRET` is missing; the endpoint answers 503. |
+| A customer pays but the invoice stays unpaid | No connected-accounts endpoint, or `STRIPE_CONNECT_WEBHOOK_SECRET` is wrong. Stripe shows 400s on that endpoint. |
 | Everything works but says STAGING | `APP_ENV` is unset on production. |
 
 `/api/health` answers the same questions without a login, and
-`node scripts/health-check.mjs https://app.thegaragedoorhq.com --expect production`
+`node scripts/health-check.mjs https://thegaragedoorhq.com --expect production`
 turns it into a pass or a fail.

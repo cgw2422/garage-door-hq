@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { requireSession } from '@/lib/session'
+import { currentPriceLabel } from '@/lib/pricing'
 import { isPlatformStaff, roleCan } from '@/lib/rbac'
 import { PageBody, PageHeader } from '@/components/app/page-header'
 import { Card, Divider, ListRow, SectionHeading } from '@/components/ui/card'
@@ -93,7 +94,7 @@ export default async function MorePage() {
         <SignOutButton />
 
         <p className="pt-2 text-center text-xs text-ink-subtle">
-          Garage Door HQ · $39.99/month · Everything included
+          Garage Door HQ · {currentPriceLabel()} · Everything included
         </p>
       </PageBody>
     </>

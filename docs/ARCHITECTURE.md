@@ -542,7 +542,9 @@ All five open questions were answered before Phase 1a and are implemented:
    with `taxJurisdiction` reserved for location-based rates later.
 3. **Labor cost** — opt-in, off by default; a solo operator is never asked to invent an hourly
    cost for themselves.
-4. **Trial** — 14 days, configurable via `TRIAL_DAYS`.
+4. **Trial** — `TRIAL_DAYS` in `src/lib/pricing.ts` (7 days), overridable per
+   deployment with a `TRIAL_DAYS` environment variable. Computed once at
+   provisioning and stored, so changing it never moves a trial already running.
 5. **Reviews** — Google is the only destination in the UI; `ReviewDestination` stores providers
    generically so Facebook or Yelp need no migration.
 

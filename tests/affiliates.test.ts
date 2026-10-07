@@ -5,10 +5,12 @@ import { normalizeReferralCode } from '@/lib/attribution'
 import {
   DEFAULT_COMMISSION_PERCENT,
   affiliateSummaries,
+  monthlyEquivalentCents,
   recordCommissionForPeriod,
   referralForOrganization,
 } from '@/server/billing/commissions'
 import { provisionOrganization } from '@/server/organizations/provision'
+import { currentOffer } from '@/lib/pricing'
 
 /**
  * Affiliate attribution and commission.
@@ -238,8 +240,34 @@ describe('the partner ledger', () => {
     expect(summary.referredCompanies).toBe(3)
     // A trial might convert and a cancelled account is gone; neither is revenue.
     expect(summary.activeSubscriptions).toBe(1)
-    expect(summary.attributedMrrCents).toBe(3999)
-    expect(summary.estimatedMonthlyCommissionCents).toBe(800)
+
+    // MRR is per month whatever the company bills on. The subscription here is
+    // whatever a new account gets today, so the expectation is derived rather
+    // than typed: changing the offer must not silently change what a partner
+    // is owed without this test noticing.
+    const expected = monthlyEquivalentCents({
+      priceCents: currentOffer().priceCents,
+      billingInterval: currentOffer().interval,
+    })
+    expect(summary.attributedMrrCents).toBe(expected)
+    expect(summary.estimatedMonthlyCommissionCents).toBe(Math.round((expected * 20) / 100))
+  })
+
+  it('counts a year of an annual subscription as one month of revenue', async () => {
+    const partner = await affiliate({ percent: 20 })
+    const annual = await companyReferredBy(partner.code)
+
+    await prisma.subscription.update({
+      where: { organizationId: annual.id },
+      data: { status: 'ACTIVE', priceCents: 24_000, billingInterval: 'year' },
+    })
+
+    const summary = (await affiliateSummaries()).find((row) => row.affiliateId === partner.id)!
+
+    // $240/year is $20/month, not $240/month. Getting this wrong would pay a
+    // partner twelve times what they earned.
+    expect(summary.attributedMrrCents).toBe(2_000)
+    expect(summary.estimatedMonthlyCommissionCents).toBe(400)
   })
 
   it('counts a past-due company, because Stripe is still collecting', async () => {

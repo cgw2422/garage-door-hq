@@ -7,6 +7,7 @@ import {
   WebhookSignatureError,
   handleStripeEvent,
   verifyStripeSignature,
+  verifyStripeSignatureAgainstAny,
 } from '@/server/billing/webhooks'
 import { createTestCompany } from './helpers'
 
@@ -148,6 +149,60 @@ describe('signature verification', () => {
     const bodyB = JSON.stringify(subscriptionEvent({ organizationId: 'b' }))
     expect(() =>
       verifyStripeSignature({ rawBody: bodyB, signature: sign(bodyA), secret: SECRET }),
+    ).toThrow(WebhookSignatureError)
+  })
+})
+
+describe('two endpoints, two secrets', () => {
+  /**
+   * Stripe registers platform events and connected-account events as separate
+   * endpoints with separate signing secrets, even pointing at this one URL. A
+   * customer paying an invoice is signed with the Connect secret; verifying
+   * only against the platform secret answers 400, which Stripe never retries,
+   * so the payment would clear in the company's account and the invoice here
+   * would stay unpaid.
+   */
+  const CONNECT_SECRET = 'whsec_test_secret_for_the_connect_endpoint'
+
+  it('accepts a delivery signed with the Connect secret', () => {
+    const body = JSON.stringify(subscriptionEvent({ organizationId: 'org' }))
+    const event = verifyStripeSignatureAgainstAny({
+      rawBody: body,
+      signature: sign(body, CONNECT_SECRET),
+      secrets: [SECRET, CONNECT_SECRET],
+    })
+    expect(event.type).toBe('customer.subscription.updated')
+  })
+
+  it('still accepts a delivery signed with the platform secret', () => {
+    const body = JSON.stringify(subscriptionEvent({ organizationId: 'org' }))
+    const event = verifyStripeSignatureAgainstAny({
+      rawBody: body,
+      signature: sign(body, SECRET),
+      secrets: [SECRET, CONNECT_SECRET],
+    })
+    expect(event.type).toBe('customer.subscription.updated')
+  })
+
+  it('refuses a signature made with neither secret', () => {
+    const body = JSON.stringify(subscriptionEvent({ organizationId: 'org' }))
+    expect(() =>
+      verifyStripeSignatureAgainstAny({
+        rawBody: body,
+        signature: sign(body, 'whsec_not_either_of_them'),
+        secrets: [SECRET, CONNECT_SECRET],
+      }),
+    ).toThrow(WebhookSignatureError)
+  })
+
+  it('refuses rather than accepting anything when no secret is configured', () => {
+    const body = JSON.stringify(subscriptionEvent({ organizationId: 'org' }))
+    expect(() =>
+      verifyStripeSignatureAgainstAny({
+        rawBody: body,
+        signature: sign(body),
+        secrets: [null, undefined, ''],
+      }),
     ).toThrow(WebhookSignatureError)
   })
 })

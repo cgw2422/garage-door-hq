@@ -5,6 +5,7 @@ import { requirePlatformStaff } from "@/lib/session";
 import { formatCents } from "@/lib/money";
 import { ROLE_LABELS } from "@/lib/roles";
 import { companyOverview } from "@/server/platform/service";
+import { discountedMonthlyCents } from "@/server/billing/commissions";
 import {
   Card,
   CardHeader,
@@ -88,9 +89,9 @@ export default async function PlatformCompanyPage({
               <DataPoint label="Plan" value={subscription.planCode} />
               <DataPoint
                 label="Price"
-                value={formatCents(subscription.priceCents, {
+                value={`${formatCents(subscription.priceCents, {
                   currency: subscription.currency,
-                })}
+                })} / ${subscription.billingInterval}`}
               />
               <DataPoint
                 label="Trial ends"
@@ -125,13 +126,9 @@ export default async function PlatformCompanyPage({
                 value={
                   subscription.status === "ACTIVE" ||
                   subscription.status === "PAST_DUE"
-                    ? formatCents(
-                        Math.round(
-                          subscription.priceCents *
-                            ((100 - (subscription.discountPercent ?? 0)) / 100),
-                        ),
-                        { currency: subscription.currency },
-                      )
+                    ? formatCents(discountedMonthlyCents(subscription), {
+                        currency: subscription.currency,
+                      })
                     : formatCents(0, { currency: subscription.currency })
                 }
               />

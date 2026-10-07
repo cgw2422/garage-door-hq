@@ -91,8 +91,13 @@ export default async function BillingPage({
               <p className="mt-1 text-lg font-bold text-ink">{PLAN.name}</p>
             </div>
             <p className="num shrink-0 text-2xl font-bold leading-none text-ink">
-              {formatCents(PLAN.priceCents, { currency: PLAN.currency })}
-              <span className="text-sm font-semibold text-ink-muted">/mo</span>
+              {formatCents(PLAN.priceCents, {
+                currency: PLAN.currency,
+                showCents: PLAN.priceCents % 100 !== 0,
+              })}
+              <span className="text-sm font-semibold text-ink-muted">
+                {PLAN.interval === 'year' ? '/yr' : '/mo'}
+              </span>
             </p>
           </div>
           <p className="mt-2 text-sm leading-relaxed text-ink-muted">{PLAN.blurb}</p>
