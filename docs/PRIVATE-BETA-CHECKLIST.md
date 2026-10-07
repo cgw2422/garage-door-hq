@@ -167,13 +167,17 @@ It refuses to go green on a schedule alone. *Code side:* DONE —
 
 ## D. Money
 
-### D1. A $39.99 subscription, real production checkout · **YOU** · BLOCKER
+### D1. A real subscription, real production checkout · **YOU** · BLOCKER
 - [ ] Sign up a company on **production** (yours is fine).
 - [ ] Settings → Billing → Subscribe.
 - [ ] Pay with a **real card**. Not a test card — this is live mode.
-- [ ] $39.99 appears in your Stripe **live** dashboard.
+- [ ] The charge in your Stripe **live** dashboard is **the price the website
+      advertises** — $249.00 yearly while the Founding Member offer runs, not
+      $39.99 monthly. A monthly charge here means
+      `STRIPE_PRICE_ID_FOUNDING_ANNUAL` is not set and Checkout fell back.
+      `/admin/system` reports that as Wrong; check it before blaming the card.
 - [ ] Refund yourself afterwards if you like; the point is that it went
-      through.
+      through, at the right price.
 
 ### D2. The webhook changed the account state · **YOU** · BLOCKER
 - [ ] Immediately after D1, the app shows the account **Active** — without you

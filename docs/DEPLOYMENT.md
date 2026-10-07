@@ -108,7 +108,7 @@ why, and for who owns refunds, disputes and fees.
 
 ### Worth setting
 
-`TRIAL_DAYS` (default 14), `PLATFORM_ADMIN_EMAIL`, `DEMO_PASSWORD`,
+`TRIAL_DAYS` (an override; the default is in `src/lib/pricing.ts`), `PLATFORM_ADMIN_EMAIL`, `DEMO_PASSWORD`,
 `EMAIL_SUPPORT_ADDRESS`.
 
 ## Migrations

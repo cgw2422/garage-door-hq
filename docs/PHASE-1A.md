@@ -16,7 +16,7 @@ This document is the honest account of that — including the shortcuts.
 | 1 | Cloudflare R2, private | `src/server/storage/*`. Presigned PUT direct from the device; every read goes through `/api/files/photos/[id]`, which checks the session and the tenant first. No public bucket, no public URL. A local-disk driver mirrors the same two-phase flow for development. |
 | 2 | Company default tax, overridable per document | `Organization.defaultTaxRateBps` seeds `Estimate.taxRateBps` at creation; the document then owns it. `taxRateOverridden` records a human change and `taxJurisdiction` is the hook for location-based rates later. Invoices copy the rate from the signed estimate, never from settings. |
 | 3 | Labor cost optional, off by default | `Organization.laborCostEnabled` defaults false. `recomputeJobCostingTx` only adds labor when it is on and an hourly figure is set. A solo operator's own time is simply not a cost. |
-| 4 | 14-day configurable trial | `TRIAL_DAYS` env, default 14, applied by `provisionOrganization`. |
+| 4 | Configurable trial | `TRIAL_DAYS` env, applied by `provisionOrganization`. The default was 14 days here; it is now 7, set in `src/lib/pricing.ts`. |
 | 5 | Google only in the UI, generic underneath | `ReviewDestination` with a `ReviewProvider` enum (Google, Facebook, Yelp, BBB, Angi, Other). Settings offers Google; adding another needs no migration. Review requests snapshot the URL at send time. |
 
 ---

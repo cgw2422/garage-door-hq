@@ -269,7 +269,12 @@ Start at `p=none`, watch the reports, tighten later.
 
 ---
 
-## 8. Stripe — the $39.99 product
+## 8. Stripe — the product and its two prices
+
+One product, two prices on it: the standard monthly price, and the Founding
+Member annual price the site currently advertises. Both exist in Stripe; which
+one Checkout uses is decided by `FOUNDING_OFFER_ACTIVE` in
+`src/lib/pricing.ts`.
 
 1. Stripe dashboard. **Check the Test/Live toggle before every step below.**
 2. **Live mode** → **Product catalogue** → **Add product**:
@@ -279,9 +284,23 @@ Start at `p=none`, watch the reports, tighten later.
    - Save.
 3. Open the price → copy the **Price ID** (`price_...`) → production variables
    as `STRIPE_PRICE_ID_STANDARD`.
-4. **Test mode** → repeat the whole thing → that price id goes in the **staging**
+4. On the same product, **Add another price**:
+   - **Recurring**, **$249.00**, **Yearly**, USD
+   - Save, open it, copy its **Price ID** → production variable
+     `STRIPE_PRICE_ID_FOUNDING_ANNUAL`.
+
+   A second price on the same product, not a second product. Existing
+   subscribers stay on whichever price they bought; adding one changes nothing
+   for them.
+5. **Test mode** → repeat both prices → those ids go in the **staging**
    variables. Different ids; do not mix them.
-5. **Developers → API keys**:
+
+**Why both.** The site advertises $249/year with a 7-day trial. If
+`STRIPE_PRICE_ID_FOUNDING_ANNUAL` is missing, Checkout falls back to the
+monthly price and charges $39.99/month to somebody who clicked a button
+offering $249/year. System Readiness reports that as **Wrong** and names the
+variable, rather than showing Stripe as connected.
+6. **Developers → API keys**:
    - Live **Secret key** (`sk_live_...`) → production only.
    - Test **Secret key** (`sk_test_...`) → staging only.
    - Ignore the **Publishable key**. Checkout and Connect onboarding are both
@@ -421,12 +440,13 @@ Legend: **required** · *recommended* · optional
 | *`EMAIL_FROM_NAME`* | `Garage Door HQ` | Type it |
 | **`STAGING_EMAIL_REDIRECT_TO`** | your own inbox | Type it — **or** `STAGING_EMAIL_ALLOWLIST` |
 | *`STRIPE_SECRET_KEY`* | `sk_test_...` | §8 — **test key only** |
-| *`STRIPE_PRICE_ID_STANDARD`* | test `price_...` | §8 |
+| *`STRIPE_PRICE_ID_STANDARD`* | test monthly `price_...` | §8 |
+| *`STRIPE_PRICE_ID_FOUNDING_ANNUAL`* | test annual `price_...` | §8 |
 | *`STRIPE_WEBHOOK_SECRET`* | staging `whsec_...` | §9 |
 | `PLATFORM_ADMIN_EMAIL` | your address | Type it |
 | `DEMO_PASSWORD` | something you choose | So the demo does not use the repo's password |
 | `DEMO_SEED_TOKEN` | 32 random chars | Only while loading the demo. **Remove afterwards.** |
-| `TRIAL_DAYS` | `14` | Type it |
+| `TRIAL_DAYS` | unset on production; `1` on staging to test expiry | §8 — the real default is `TRIAL_DAYS` in `src/lib/pricing.ts` |
 
 **Do not set on staging:** `AUTH_URL`, `ALLOW_LOCAL_APP_URL`,
 `ALLOW_SEED_RESET`, any `sk_live_` key.
@@ -450,14 +470,15 @@ Legend: **required** · *recommended* · optional
 | **`EMAIL_FROM_NAME`** | `Garage Door HQ` | Type it |
 | *`EMAIL_SUPPORT_ADDRESS`* | `support@thegaragedoorhq.com` | Reply-to on platform mail |
 | **`STRIPE_SECRET_KEY`** | `sk_live_...` | §8 |
-| **`STRIPE_PRICE_ID_STANDARD`** | live `price_...` | §8 |
+| **`STRIPE_PRICE_ID_STANDARD`** | live monthly `price_...` | §8 |
+| **`STRIPE_PRICE_ID_FOUNDING_ANNUAL`** | live annual `price_...` | §8 — Checkout uses this while the offer runs |
 | **`STRIPE_WEBHOOK_SECRET`** | production `whsec_...` | §9 |
 | **`STRIPE_CONNECT_WEBHOOK_SECRET`** | Connect `whsec_...` | §9 — the connected-accounts endpoint's own secret |
 | **`PLATFORM_ADMIN_EMAIL`** | your address | Type it |
 | *`DEMO_PASSWORD`* | 12+ characters you choose | Only if you want the demo company here. The repo's default is refused |
 | *`BACKUP_SCHEDULE`* | e.g. `Daily 03:00 UTC, 30 days, Railway + weekly dump to R2` | §4 |
 | *`BACKUP_LAST_VERIFIED_RESTORE`* | e.g. `2026-09-17` | §5 |
-| `TRIAL_DAYS` | `14` | Type it |
+| `TRIAL_DAYS` | unset on production; `1` on staging to test expiry | §8 — the real default is `TRIAL_DAYS` in `src/lib/pricing.ts` |
 
 **Never set on production:** `AUTH_URL`, `ALLOW_LOCAL_APP_URL`,
 `ALLOW_SEED_RESET`, `STAGING_EMAIL_*`, any `sk_test_` key.
