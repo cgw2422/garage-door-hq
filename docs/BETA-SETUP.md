@@ -284,8 +284,8 @@ Start at `p=none`, watch the reports, tighten later.
 5. **Developers → API keys**:
    - Live **Secret key** (`sk_live_...`) → production only.
    - Test **Secret key** (`sk_test_...`) → staging only.
-   - The **Publishable key** is public by design and goes in
-     `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
+   - Ignore the **Publishable key**. Checkout and Connect onboarding are both
+     hosted by Stripe, so nothing in the browser loads Stripe.js.
 
    The application **refuses to start with a live key outside production**, so a
    mix-up in this direction fails loudly rather than charging somebody.
@@ -423,7 +423,6 @@ Legend: **required** · *recommended* · optional
 | *`STRIPE_SECRET_KEY`* | `sk_test_...` | §8 — **test key only** |
 | *`STRIPE_PRICE_ID_STANDARD`* | test `price_...` | §8 |
 | *`STRIPE_WEBHOOK_SECRET`* | staging `whsec_...` | §9 |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_test_...` | §8 — public by design |
 | `PLATFORM_ADMIN_EMAIL` | your address | Type it |
 | `DEMO_PASSWORD` | something you choose | So the demo does not use the repo's password |
 | `DEMO_SEED_TOKEN` | 32 random chars | Only while loading the demo. **Remove afterwards.** |
@@ -454,7 +453,6 @@ Legend: **required** · *recommended* · optional
 | **`STRIPE_PRICE_ID_STANDARD`** | live `price_...` | §8 |
 | **`STRIPE_WEBHOOK_SECRET`** | production `whsec_...` | §9 |
 | **`STRIPE_CONNECT_WEBHOOK_SECRET`** | Connect `whsec_...` | §9 — the connected-accounts endpoint's own secret |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_live_...` | §8 — public by design |
 | **`PLATFORM_ADMIN_EMAIL`** | your address | Type it |
 | *`DEMO_PASSWORD`* | 12+ characters you choose | Only if you want the demo company here. The repo's default is refused |
 | *`BACKUP_SCHEDULE`* | e.g. `Daily 03:00 UTC, 30 days, Railway + weekly dump to R2` | §4 |

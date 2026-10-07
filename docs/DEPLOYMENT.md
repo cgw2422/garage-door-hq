@@ -93,8 +93,9 @@ on screen. It never records a message as delivered that was not.
 
 ### Stripe — set before charging anyone
 
-`STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID_STANDARD`, `STRIPE_WEBHOOK_SECRET`, and
-`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
+`STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID_STANDARD`, `STRIPE_WEBHOOK_SECRET` and
+`STRIPE_CONNECT_WEBHOOK_SECRET`. There is no publishable key: every Stripe
+screen is hosted by Stripe, so the browser never loads Stripe.js.
 
 Point the Stripe webhook endpoint at `https://<your-domain>/api/webhooks/stripe`
 and copy its signing secret into `STRIPE_WEBHOOK_SECRET`. The webhook is the

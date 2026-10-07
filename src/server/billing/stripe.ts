@@ -17,8 +17,17 @@ export interface StripeConfig {
   priceId: string | null
   webhookSecret: string | null
   connectWebhookSecret: string | null
-  publishableKey: string | null
 }
+
+/**
+ * There is deliberately no publishable key here.
+ *
+ * Every Stripe surface this product shows is hosted by Stripe — Checkout for
+ * the subscription and for a homeowner paying an invoice, and an account link
+ * for Connect onboarding. Nothing loads Stripe.js, so the browser never needs
+ * a key, and `@stripe/stripe-js` is not a dependency. Carrying the variable
+ * anyway would be one more thing to set that changes nothing.
+ */
 
 export function readStripeConfigFromEnv(): StripeConfig | null {
   const secretKey = process.env.STRIPE_SECRET_KEY
@@ -34,7 +43,6 @@ export function readStripeConfigFromEnv(): StripeConfig | null {
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || null,
     connectWebhookSecret:
       process.env.STRIPE_CONNECT_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET || null,
-    publishableKey: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || null,
   }
 }
 
