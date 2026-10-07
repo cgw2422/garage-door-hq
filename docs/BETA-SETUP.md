@@ -17,25 +17,29 @@ account, and control of the DNS for `thegaragedoorhq.com`.
 
 | Host | Is | Served by |
 |---|---|---|
-| `thegaragedoorhq.com` | The public marketing site | Wherever you host it — **not Railway** |
-| `app.thegaragedoorhq.com` | The application | Railway, production environment |
-| `staging.thegaragedoorhq.com` | The application, for testing | Railway, staging environment |
+| `thegaragedoorhq.com` | Everything — the landing page and the application | Railway, production environment |
+| `staging.thegaragedoorhq.com` | The same application, for testing | Railway, staging environment |
 
-Every user signs in at `app.`, and every customer link — estimates, invoices,
-portal, password resets — is built from it. Nothing should be published on a
-Railway-generated `*.up.railway.app` address; those exist only to reach a
-deployment before its real domain is attached.
+One domain. The application serves its own landing page at `/`
+(`src/app/(marketing)/page.tsx`), so a visitor reads about the product, signs
+up, and is in the product, without ever changing host. Everything after sign-in
+— jobs, customers, estimates, `/admin` — is a path under the same name, and
+every customer link is built from it.
 
-Do **not** point the apex at Railway. It belongs to the marketing site, and the
-application never needs to answer on it.
+There is no `app.` subdomain and nothing needs one. Splitting the landing page
+onto a separate host would mean two origins, two certificates, and a referral
+cookie that does not follow a visitor from one to the other.
 
-**One thing the split breaks if you leave it:** affiliate links. The referral
-cookie is written by the application's middleware and is host-only, so a
-partner sharing `thegaragedoorhq.com/?ref=SKOOL` attributes nobody — the
-visitor lands on the marketing site, which never runs that code. Partner links
-must point at `app.thegaragedoorhq.com/?ref=CODE`, or the marketing site must
-carry `?ref=` through to its signup button. Silent when wrong, and what it
-costs is somebody's commission.
+Nothing should be published on a Railway-generated `*.up.railway.app` address;
+those exist only to reach a deployment before its real domain is attached.
+
+**Affiliate links work because of this.** The referral cookie is written by the
+application's middleware, so `thegaragedoorhq.com/?ref=SKOOL` sets it on the
+first page a partner's visitor lands on, and it is still there sixty days later
+when they sign up. That only holds while the landing page and the application
+are the same host — if the marketing site ever moves to something else, partner
+links have to target wherever the application lives, or attribution silently
+stops and what it costs is somebody's commission.
 
 ---
 
@@ -295,7 +299,7 @@ account never activates.
 
 1. **Developers → Webhooks → Add endpoint**.
 2. **Production** (live mode):
-   - URL: `https://app.thegaragedoorhq.com/api/webhooks/stripe`
+   - URL: `https://thegaragedoorhq.com/api/webhooks/stripe`
    - Events:
      ```
      checkout.session.completed
@@ -337,7 +341,7 @@ this way.
    - Fill in your business details, support email and a statement descriptor.
      Connected companies see these during onboarding.
    - **Branding**: your logo and colour, so a technician recognises the flow.
-   - **Redirects**: add `https://app.thegaragedoorhq.com/settings/payments` and the
+   - **Redirects**: add `https://thegaragedoorhq.com/settings/payments` and the
      staging equivalent.
 3. **Connect webhooks**: if you register a separate Connect endpoint, put its
    signing secret in `STRIPE_CONNECT_WEBHOOK_SECRET`. If you use one endpoint
@@ -354,12 +358,19 @@ DNS first, because it is the slowest thing here.
 
 1. Railway → **staging** environment → the service → **Settings → Networking →
    Custom Domain** → `staging.thegaragedoorhq.com`. Railway shows a CNAME target.
-2. Railway → **production** environment → the same → `app.thegaragedoorhq.com`.
+2. Railway → **production** environment → the same → `thegaragedoorhq.com`.
 3. At your DNS provider:
    ```
    staging.thegaragedoorhq.com   CNAME   <target Railway shows>
-   app.thegaragedoorhq.com       CNAME   <target Railway shows>
+   thegaragedoorhq.com           ALIAS   <target Railway shows>
    ```
+
+   The apex is the awkward one. A CNAME is not valid at the root of a zone, so
+   providers offer their own record for it — ALIAS, ANAME, or "CNAME
+   flattening" on Cloudflare — which resolves the target and answers with its
+   addresses. Use whichever yours calls it. If it offers none, Railway's A
+   record is the fallback, with the cost that a change on their side needs a
+   change on yours.
 4. Wait for Railway to show the certificate as issued.
 5. Set `APP_URL` and `NEXT_PUBLIC_APP_URL` on each service to match, exactly,
    with `https://` and no trailing slash. Every link that leaves the building
@@ -411,7 +422,7 @@ Legend: **required** · *recommended* · optional
 | **`APP_ENV`** | `production` | Type it. Without it, outbound email is held back. |
 | **`DATABASE_URL`** | reference | §3 — Add Reference → `production-db` |
 | **`AUTH_SECRET`** | 32 random bytes | `openssl rand -base64 32` — **its own, never staging's** |
-| **`APP_URL`** | `https://app.thegaragedoorhq.com` | §11 |
+| **`APP_URL`** | `https://thegaragedoorhq.com` | §11 |
 | **`NEXT_PUBLIC_APP_URL`** | the same | §11 |
 | **`STORAGE_DRIVER`** | `r2` | Type it |
 | **`R2_ACCOUNT_ID`** | Cloudflare account id | §6 |
@@ -551,5 +562,5 @@ fine while that person is you and nobody else has the address.
 | Everything works but says STAGING | `APP_ENV` is unset on production. |
 
 `/api/health` answers the same questions without a login, and
-`node scripts/health-check.mjs https://app.thegaragedoorhq.com --expect production`
+`node scripts/health-check.mjs https://thegaragedoorhq.com --expect production`
 turns it into a pass or a fail.

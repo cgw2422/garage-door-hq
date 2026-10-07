@@ -6,7 +6,7 @@ Everything here exists to keep the other two away from it.
 ```
   local              staging                          production
   ─────              ───────                          ──────────
-  laptop /           staging.thegaragedoorhq.com         app.thegaragedoorhq.com
+  laptop /           staging.thegaragedoorhq.com         thegaragedoorhq.com
   Claude dev         test data only                   REAL CUSTOMERS
 
   own Postgres       own Postgres                     own Postgres
@@ -103,7 +103,7 @@ Three services, each with its own Postgres and its own variables.
 
 ### Custom domains
 
-`staging.thegaragedoorhq.com` → staging service. `app.thegaragedoorhq.com` →
+`staging.thegaragedoorhq.com` → staging service. `thegaragedoorhq.com` →
 production service. Set `APP_URL` to match; a mismatch mails customers links to
 the wrong host.
 
@@ -222,7 +222,7 @@ psql "$RECOVERY_DATABASE_URL" -c '
 # 4. Point production at it: change DATABASE_URL on the production service.
 # 5. Redeploy. `prisma migrate deploy` brings the restored schema up to the
 #    running code on boot.
-# 6. node scripts/health-check.mjs https://app.thegaragedoorhq.com --expect production
+# 6. node scripts/health-check.mjs https://thegaragedoorhq.com --expect production
 ```
 
 Keep the damaged database. Do not delete it until the restore is confirmed —
@@ -319,7 +319,7 @@ Remove `DEMO_SEED_TOKEN` afterwards. With it unset the route 404s.
 ## 8. Checking where you are
 
 ```bash
-node scripts/health-check.mjs https://app.thegaragedoorhq.com --expect production
+node scripts/health-check.mjs https://thegaragedoorhq.com --expect production
 node scripts/health-check.mjs https://staging.thegaragedoorhq.com --expect staging
 ```
 
