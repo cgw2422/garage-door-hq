@@ -20,6 +20,7 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
   { path: '/how-it-works', label: 'How It Works', changeFrequency: 'monthly', priority: 0.9 },
   { path: '/pricing', label: 'Pricing', changeFrequency: 'monthly', priority: 0.9 },
   { path: '/faq', label: 'FAQ', changeFrequency: 'monthly', priority: 0.7 },
+  { path: '/about', label: 'About', changeFrequency: 'monthly', priority: 0.6 },
   { path: '/security', label: 'Security', changeFrequency: 'yearly', priority: 0.5 },
   { path: '/contact', label: 'Contact', changeFrequency: 'yearly', priority: 0.5 },
   { path: '/privacy', label: 'Privacy Policy', changeFrequency: 'yearly', priority: 0.3 },

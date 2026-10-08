@@ -38,6 +38,7 @@ const FOOTER = [
   {
     heading: 'Company',
     links: [
+      { href: '/about', label: 'About' },
       { href: '/security', label: 'Security' },
       { href: '/contact', label: 'Contact' },
       { href: '/privacy', label: 'Privacy' },

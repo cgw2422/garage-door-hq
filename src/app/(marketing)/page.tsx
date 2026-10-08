@@ -24,6 +24,7 @@ import {
   StatBand,
 } from '@/components/marketing/feature'
 import { PhoneGallery, PhonePair, PhoneShot, Showcase } from '@/components/marketing/screens'
+import { Testimonials, UsageCounter } from '@/components/marketing/proof'
 import { pageMetadata } from '@/lib/seo'
 
 export const metadata: Metadata = pageMetadata({
@@ -175,6 +176,9 @@ export default async function HomePage() {
             <div className="mt-8 inline-flex rounded-[--radius-card] border border-brand-800/80 bg-brand-900/30 px-5 py-4">
               <PriceBlock size="md" />
             </div>
+
+            {/* Renders only when there is a true number to print. */}
+            <UsageCounter className="mt-5" />
           </div>
 
           <PhonePair
@@ -384,6 +388,15 @@ export default async function HomePage() {
         }
       />
 
+      {/* -------------------------------------------------------- Testimonials */}
+      {/*
+        Named operator quotes, or nothing at all. The section disappears while
+        `TESTIMONIALS` is empty rather than showing a frame with placeholder in
+        it — on a page whose security section refuses to claim the product is
+        unhackable, an invented quote would undo the rest.
+      */}
+      <Testimonials surface="sunken" id="customers" />
+
       {/* -------------------------------------------------------- Differentiator */}
       <Section surface="deep" size="loose">
         <div className="mx-auto max-w-4xl text-center">
@@ -467,6 +480,7 @@ export default async function HomePage() {
           <div>
             <Eyebrow>Pricing</Eyebrow>
             <Headline className="mt-3">One plan. Everything in it.</Headline>
+            <UsageCounter className="mt-5" />
             <Lede className="mt-5">
               No tiers to compare, nothing held back for a higher plan, and no charge for putting
               another technician in another truck.
