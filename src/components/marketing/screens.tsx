@@ -1,4 +1,5 @@
 import Image from 'next/image'
+import type { ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 
 /**
@@ -6,13 +7,13 @@ import { cn } from '@/lib/cn'
  *
  * Every image on the public site is a capture of the running application, made
  * by `scripts/marketing-screens.mjs` against seeded demo data. Nothing here
- * draws a fake dashboard, and nothing here is allowed to: these components take
- * a name from the manifest below and would fail the build on a typo rather
- * than silently render a broken image.
+ * draws a fake dashboard, and nothing here can: these take a name from the
+ * manifest below, so a typo fails the build rather than rendering a gap.
  *
- * The frames exist because an unframed screenshot on a coloured background
- * reads as a mistake. A phone bezel or a browser chrome says "this is a
- * picture of a thing" and lets the screenshot keep its own edges.
+ * The frames read their colours from the surface they are on
+ * (`--m-frame`, `--m-shadow`), so a phone on white gets a light bezel and a
+ * soft shadow while the same component on navy gets a dark one. Without that,
+ * every light section had a black phone floating on it.
  */
 
 /**
@@ -56,6 +57,13 @@ export const SCREENS = {
   'desktop-inventory': { width: 2880, height: 1800 },
   'desktop-money': { width: 2880, height: 1800 },
   'desktop-price-book': { width: 2880, height: 1800 },
+  'desktop-invoices': { width: 2880, height: 1800 },
+  'desktop-customer': { width: 2880, height: 1800 },
+  'desktop-door-passport': { width: 2880, height: 1800 },
+  'desktop-inspection': { width: 2880, height: 1800 },
+  'desktop-estimate': { width: 2880, height: 1800 },
+  'desktop-spring-lookup': { width: 2880, height: 1800 },
+  'desktop-invoice': { width: 2880, height: 1800 },
 } as const
 
 export type ScreenName = keyof typeof SCREENS
@@ -64,13 +72,7 @@ function source(name: ScreenName) {
   return `/marketing/${name}.webp`
 }
 
-/**
- * A phone, with a real screen in it.
- *
- * Sizes are given explicitly rather than left to the browser, because these
- * are the largest things on the page and `sizes` is what stops a phone
- * downloading a 780px-wide image to show it at 240.
- */
+/** A phone, with a real screen in it. */
 export function PhoneShot({
   name,
   alt,
@@ -91,7 +93,7 @@ export function PhoneShot({
   return (
     <div
       className={cn(
-        'relative shrink-0 rounded-[2.25rem] border border-navy-700/80 bg-navy-900 p-[0.4rem] shadow-[0_30px_70px_-20px_rgba(0,0,0,0.75)]',
+        'relative shrink-0 rounded-[2.25rem] border border-[color:var(--m-frame)] bg-[color:var(--m-frame-body)] p-[0.4rem] shadow-[var(--m-shadow)]',
         className,
       )}
       style={{ width }}
@@ -123,35 +125,40 @@ export function BrowserShot({
   priority = false,
   className,
   sizes = '(max-width: 1024px) 92vw, 960px',
+  /** Show only the top of a tall capture, so detail stays readable. */
+  crop,
 }: {
   name: ScreenName
   alt: string
   priority?: boolean
   className?: string
   sizes?: string
+  crop?: 'top'
 }) {
   const screen = SCREENS[name]
   return (
     <figure
       className={cn(
-        'overflow-hidden rounded-[--radius-card] border border-navy-700/70 bg-navy-900 shadow-[0_40px_90px_-30px_rgba(0,0,0,0.8)]',
+        'overflow-hidden rounded-[--radius-card] border border-[color:var(--m-frame)] bg-[color:var(--m-frame-body)] shadow-[var(--m-shadow)]',
         className,
       )}
     >
-      <div className="flex items-center gap-1.5 border-b border-navy-800 px-4 py-3">
-        <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-navy-600" />
-        <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-navy-600" />
-        <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-navy-600" />
+      <div className="flex items-center gap-1.5 border-b border-[color:var(--m-frame)] px-4 py-3">
+        <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-[color:var(--m-frame)]" />
+        <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-[color:var(--m-frame)]" />
+        <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-[color:var(--m-frame)]" />
       </div>
-      <Image
-        src={source(name)}
-        alt={alt}
-        width={screen.width}
-        height={screen.height}
-        sizes={sizes}
-        priority={priority}
-        className="h-auto w-full"
-      />
+      <div className={cn(crop === 'top' && 'max-h-[30rem] overflow-hidden')}>
+        <Image
+          src={source(name)}
+          alt={alt}
+          width={screen.width}
+          height={screen.height}
+          sizes={sizes}
+          priority={priority}
+          className="h-auto w-full"
+        />
+      </div>
     </figure>
   )
 }
@@ -159,37 +166,130 @@ export function BrowserShot({
 /**
  * Two phones, one behind the other.
  *
- * The composition the homepage hero and several sections are built on: the
- * screen that carries the headline in front, and the screen that proves it is
- * part of a whole application behind. Stacks to a single phone below `sm`,
- * where two overlapping phones would make both unreadable.
+ * The overlap is deliberately modest. An earlier version buried the rear
+ * phone so completely that all you saw was half a cut-off word, which reads
+ * as a rendering fault rather than as depth — the rear screen has to be
+ * recognisable as a second screen or it should not be there.
+ *
+ * Stacks to a single phone below `sm`, where two overlapping phones would make
+ * both unreadable. The second image is `hidden sm:block`, so it is correctly
+ * never fetched on a phone.
  */
 export function PhonePair({
   front,
   behind,
   priority = false,
   className,
+  size = 'normal',
 }: {
   front: { name: ScreenName; alt: string }
   behind: { name: ScreenName; alt: string }
   priority?: boolean
   className?: string
+  size?: 'normal' | 'large'
 }) {
+  const frontWidth = size === 'large' ? 330 : 290
+  const behindWidth = size === 'large' ? 282 : 248
   return (
     <div className={cn('relative flex justify-center', className)}>
       <PhoneShot
         {...behind}
-        width={248}
-        sizes="248px"
-        className="hidden sm:block sm:translate-x-[38%] sm:translate-y-[9%] sm:rotate-[5deg] sm:opacity-95"
+        width={behindWidth}
+        sizes={`${behindWidth}px`}
+        className="hidden sm:block sm:translate-x-[20%] sm:translate-y-[7%] sm:rotate-[5deg] sm:opacity-95"
       />
       <PhoneShot
         {...front}
         priority={priority}
-        width={290}
-        sizes="(max-width: 640px) 74vw, 290px"
-        className="relative z-10 sm:-translate-x-[18%] sm:-rotate-[3deg]"
+        width={frontWidth}
+        sizes={`(max-width: 640px) 74vw, ${frontWidth}px`}
+        className="relative z-10 sm:-translate-x-[8%] sm:-rotate-[3deg]"
       />
+    </div>
+  )
+}
+
+/**
+ * One screen, given the whole width.
+ *
+ * The answer to "every section is a phone beside a paragraph": the sections
+ * that carry the most weight get a desktop capture at full measure, where the
+ * numbers on it are legible rather than suggestive.
+ */
+export function Showcase({
+  name,
+  alt,
+  caption,
+  priority = false,
+  className,
+  crop,
+}: {
+  name: ScreenName
+  alt: string
+  caption?: string
+  priority?: boolean
+  className?: string
+  crop?: 'top'
+}) {
+  return (
+    <figure className={cn('flex flex-col items-center gap-4', className)}>
+      <BrowserShot
+        name={name}
+        alt={alt}
+        priority={priority}
+        crop={crop}
+        sizes="(max-width: 1024px) 94vw, 1100px"
+        className="w-full"
+      />
+      {caption ? (
+        <figcaption className="max-w-xl text-center text-sm leading-relaxed text-[color:var(--m-muted)]">
+          {caption}
+        </figcaption>
+      ) : null}
+    </figure>
+  )
+}
+
+/**
+ * Three or four phones in a row, as one picture.
+ *
+ * For a sequence — handover, choose, sign — where the point is that the screens
+ * follow one another. Scrolls horizontally on a phone rather than shrinking to
+ * four unreadable slivers, with the scroll hinted by the last one bleeding off
+ * the edge.
+ */
+export function PhoneGallery({
+  screens,
+  className,
+  width = 232,
+}: {
+  screens: readonly { name: ScreenName; alt: string; label?: string }[]
+  className?: string
+  width?: number
+}) {
+  return (
+    <div
+      className={cn(
+        '-mx-5 flex snap-x snap-mandatory gap-5 overflow-x-auto px-5 pb-4 sm:mx-0 sm:px-0 lg:justify-center',
+        className,
+      )}
+    >
+      {screens.map((screen, index) => (
+        <figure key={screen.name} className="flex shrink-0 snap-center flex-col items-center gap-3">
+          <PhoneShot
+            name={screen.name}
+            alt={screen.alt}
+            width={width}
+            sizes={`${width}px`}
+            className={index % 2 === 1 ? 'lg:translate-y-6' : undefined}
+          />
+          {screen.label ? (
+            <figcaption className="text-center text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--m-faint)]">
+              {screen.label}
+            </figcaption>
+          ) : null}
+        </figure>
+      ))}
     </div>
   )
 }
@@ -206,14 +306,14 @@ export function ScreenFigure({
   caption,
   className,
 }: {
-  children: React.ReactNode
+  children: ReactNode
   caption: string
   className?: string
 }) {
   return (
     <figure className={cn('flex flex-col items-center gap-4', className)}>
       {children}
-      <figcaption className="max-w-sm text-center text-sm leading-relaxed text-navy-300">
+      <figcaption className="max-w-sm text-center text-sm leading-relaxed text-[color:var(--m-muted)]">
         {caption}
       </figcaption>
     </figure>

@@ -1,8 +1,21 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { ButtonLink } from '@/components/ui/button'
-import { Eyebrow, Headline, Lede, Section } from '@/components/marketing/section'
-import { BrowserShot, PhoneShot, ScreenFigure } from '@/components/marketing/screens'
-import type { ScreenName } from '@/components/marketing/screens'
+import {
+  Aside,
+  Eyebrow,
+  FactList,
+  Headline,
+  Lede,
+  Section,
+} from '@/components/marketing/section'
+import {
+  CapabilityGrid,
+  Caveat,
+  ShowcaseFeature,
+  SplitFeature,
+} from '@/components/marketing/feature'
+import { PhoneGallery, PhonePair, Showcase } from '@/components/marketing/screens'
 import { pageMetadata } from '@/lib/seo'
 import { currentOffer } from '@/lib/pricing'
 
@@ -10,176 +23,94 @@ export const metadata: Metadata = pageMetadata({
   path: '/features',
   title: 'Features — Garage Door HQ',
   description:
-    'Everything Garage Door HQ does, organised the way a garage door business runs: the day, the door, the sale, the work, getting paid, and running the business.',
+    'Door Passports, garage-door inspections, flexible estimates, Customer Presentation Mode, spring lookup and truck inventory — plus everything else, organised the way a garage door business runs.',
 })
 
 /**
- * Features, grouped by when you use them rather than by what they are.
+ * Features, with a hierarchy.
  *
- * An icon grid tells somebody that thirty features exist. It does not tell
- * them whether the software understands their work. These six groups are the
- * shape of the business — the day, the door, the sale, the work, the money,
- * the back office — so reading the page is reading a description of the job.
+ * The first version gave six groups equal weight and equal shape, which is the
+ * same as giving none of them any. Four things are the reason somebody would
+ * choose this over generic field-service software — the Door Passport, the
+ * inspection-to-estimate path, Presentation Mode, and spring lookup meeting
+ * truck stock — so those get a full-width screen each. Everything else is a
+ * compact grid, which is the right size for "yes, it schedules jobs".
  */
 
-interface Feature {
-  name: string
-  detail: string
-}
+const RUN_THE_DAY = [
+  { name: 'Today', detail: "The next job, the day's schedule, what is done and what is left, revenue and average ticket." },
+  { name: 'Scheduling', detail: 'Put jobs on the calendar, move them when the day changes, see the whole week.' },
+  { name: 'Jobs', detail: 'A job carries its customer, property, door, inspection, estimate, parts and invoice.' },
+  { name: 'Customers', detail: 'Customers, their properties, and every door at each one.' },
+  { name: 'Global search', detail: 'One box across customers, jobs and parts.' },
+  { name: 'Team and roles', detail: 'Owner, admin and technician, each seeing what that role should.' },
+] as const
 
-interface Group {
-  id: string
-  eyebrow: string
-  headline: string
-  lede: string
-  features: Feature[]
-  screen: { name: ScreenName; alt: string; caption: string; kind: 'phone' | 'browser' }
-}
+const DO_THE_WORK = [
+  { name: 'Parts catalogue', detail: 'Your own, with cost and price, searchable by specification.' },
+  { name: 'Truck inventory', detail: 'Each truck is a stock location with its own counts.' },
+  { name: 'Warehouse inventory', detail: 'The shop stock, kept separate from what is on the road.' },
+  { name: 'Transfers', detail: 'Move parts warehouse-to-truck, or truck-to-truck.' },
+  { name: 'Minimum quantities', detail: 'Set a minimum per location and see what is below it.' },
+  { name: 'Parts usage', detail: 'Completing a job moves its parts out of the location they came from.' },
+] as const
 
-const GROUPS: Group[] = [
-  {
-    id: 'run-the-day',
-    eyebrow: 'Run the day',
-    headline: 'Where am I going, and who am I seeing?',
-    lede: 'The part of the software a technician opens twenty times a day, built to answer that in one screen.',
-    features: [
-      { name: 'Today', detail: "The next job, today's schedule, what is done and what is left, revenue and average ticket." },
-      { name: 'Scheduling', detail: 'Put jobs on the calendar, move them when the day changes, and see the whole week.' },
-      { name: 'Jobs', detail: 'A job carries its customer, property, door, inspection, estimate, parts and invoice.' },
-      { name: 'Customers', detail: 'Customers, their properties, and every door at each one.' },
-      { name: 'Team', detail: 'Invite technicians, assign work, and set what each role can do.' },
-    ],
-    screen: {
-      kind: 'phone',
-      name: 'today',
-      alt: "The Today screen: today's revenue, jobs remaining and completed, average ticket, and the next job with call, text and directions",
-      caption: 'Today, on the phone in the truck.',
-    },
-  },
-  {
-    id: 'at-the-door',
-    eyebrow: 'At the door',
-    headline: 'Everything about this specific door.',
-    lede: 'Garage Door HQ models the equipment, not just the appointment. This is the part generic field-service software does not have.',
-    features: [
-      { name: 'Door Passport', detail: 'Size, manufacturer, model, serial, material, colour, insulation, weight, track and headroom.' },
-      { name: 'Openers', detail: 'Make, model and serial of the opener fitted, kept through every replacement.' },
-      { name: 'Spring systems', detail: 'Torsion or extension, wire size, inside diameter, length, wind direction and cycle rating.' },
-      { name: 'Inspection', detail: 'Twenty-three components grouped by spring system, hardware, door, opener and safety.' },
-      { name: 'Photos', detail: 'Taken on the job, attached to the door, and visible on the next visit.' },
-      { name: 'Service history', detail: 'What was done, when, and what equipment went on or came off.' },
-    ],
-    screen: {
-      kind: 'phone',
-      name: 'door-passport',
-      alt: 'A Door Passport for a 16 by 7 foot insulated Clopay steel door with its measured weight, track type and torsion spring pair',
-      caption: 'A Door Passport. Every door at every property has one.',
-    },
-  },
-  {
-    id: 'sell-the-work',
-    eyebrow: 'Sell the work',
-    headline: 'The customer understands, chooses and signs.',
-    lede: 'Findings become options, options become an estimate, and the estimate gets approved in the driveway or in their inbox.',
-    features: [
-      { name: 'Flexible estimates', detail: 'One option when there is one answer. Several when there is a choice.' },
-      { name: 'One or multiple options', detail: 'The customer picks; the choice is recorded with what they agreed to.' },
-      { name: 'Optional Good / Better / Best', detail: 'Available when you want to present tiers. Never required.' },
-      { name: 'Customer Presentation Mode', detail: 'Your device becomes the customer’s estimate, locked to that estimate until a technician unlocks it.' },
-      { name: 'Sent estimates', detail: 'Send a proposal to review later — the better workflow for a full installation.' },
-      { name: 'Signatures', detail: 'Signed on the device, stored with the estimate and the option they chose.' },
-    ],
-    screen: {
-      kind: 'phone',
-      name: 'presentation-customer',
-      alt: 'Customer Presentation Mode showing the homeowner what was found and the repair options to choose from',
-      caption: 'Customer Presentation Mode — what the homeowner sees.',
-    },
-  },
-  {
-    id: 'do-the-work',
-    eyebrow: 'Do the work',
-    headline: 'The parts, and where they are.',
-    lede: 'Stock lives on trucks and in the warehouse, moves between them, and comes off the count when it goes on a door.',
-    features: [
-      { name: 'Parts', detail: 'Your own catalogue, with cost and price, searchable by specification.' },
-      { name: 'Truck inventory', detail: 'Each truck is a location with its own counts.' },
-      { name: 'Warehouse inventory', detail: 'The shop stock, separate from what is on the road.' },
-      { name: 'Transfers', detail: 'Move parts between the warehouse and a truck, or between trucks.' },
-      { name: 'Minimum quantities', detail: 'Set a minimum per location and see what is below it.' },
-      { name: 'Parts usage', detail: 'Completing a job with parts on it moves them out of the location they came from.' },
-    ],
-    screen: {
-      kind: 'phone',
-      name: 'truck-inventory',
-      alt: 'Truck inventory showing springs, rollers, openers and cables with the quantity at each location',
-      caption: 'What is actually on the truck.',
-    },
-  },
-  {
-    id: 'get-paid',
-    eyebrow: 'Get paid',
-    headline: 'Invoice it and take the money.',
-    lede: 'The invoice is built from the work that was approved and the parts that were used, so it matches the job.',
-    features: [
-      { name: 'Invoices', detail: 'Generated from the approved estimate and the completed job, with their own numbering.' },
-      { name: 'Payments', detail: 'Record cash, cheque or card. Card payments go through your own connected Stripe account.' },
-    ],
-    screen: {
-      kind: 'phone',
-      name: 'invoice',
-      alt: 'An invoice showing the approved work, the parts used and the amount due',
-      caption: 'An invoice, built from the job it came from.',
-    },
-  },
-  {
-    id: 'run-the-business',
-    eyebrow: 'Run the business',
-    headline: 'What it cost, what it made, what it is worth.',
-    lede: 'The office half: your pricing, your people, your settings, and an honest read on whether the work is making money.',
-    features: [
-      { name: 'Money', detail: 'Revenue, jobs, average ticket, parts cost, processing fees and outstanding invoices.' },
-      { name: 'Price book', detail: 'Your parts and labour, your prices, and reusable packages for the repairs you do every week.' },
-      { name: 'Team', detail: 'Owner, admin and technician roles, each seeing what that role should see.' },
-      { name: 'Settings', detail: 'Company details, tax, numbering, document terms and branding.' },
-      { name: 'Estimated profitability', detail: 'Charged less parts cost less fees. For judging a job, not for your accounts.' },
-    ],
-    screen: {
-      kind: 'browser',
-      name: 'desktop-price-book',
-      alt: 'The price book on a desktop browser, listing parts and labour with cost and price',
-      caption: 'The price book, on the office machine.',
-    },
-  },
-]
+const GET_PAID = [
+  { name: 'Invoices', detail: 'Built from the approved estimate and the completed job, with their own numbering.' },
+  { name: 'Card payments', detail: 'Through your own connected Stripe account, with your business as merchant of record.' },
+  { name: 'Cash and cheque', detail: 'Recorded against the invoice without connecting anything.' },
+  { name: 'Customer links', detail: 'Send an estimate or invoice as a link that opens that one document and expires.' },
+  { name: 'PDFs', detail: 'Estimates and invoices download as PDFs carrying your branding.' },
+  { name: 'Money', detail: 'Revenue, jobs, average ticket, parts cost, processing fees, outstanding invoices.' },
+] as const
+
+const AT_THE_DOOR_FACTS = [
+  'Size, panel count and style',
+  'Manufacturer, model and serial',
+  'Material, colour and insulation',
+  'Measured door weight',
+  'Track type, radius and headroom',
+  'Opener make, model and serial',
+  'Spring type, wire size, wind, cycles',
+  'Warranty dates, door and labour',
+  'Full service history',
+  'Photos from every visit',
+] as const
 
 export default function FeaturesPage() {
   const offer = currentOffer()
 
   return (
     <>
-      <Section surface="base" className="pt-12 sm:pt-16">
+      {/* ---------------------------------------------------------------- Intro */}
+      <Section surface="base" className="pt-12 sm:pt-16" size="tight">
         <div className="max-w-3xl">
           <Eyebrow>Features</Eyebrow>
-          <Headline as="h1" className="mt-4">
-            Everything it does, in the order you do it.
+          <Headline as="h1" size="large" className="mt-4">
+            Four things generic software doesn&rsquo;t have.
           </Headline>
           <Lede className="mt-6">
-            Garage Door HQ is one product with one price, so this is not a list of what you would
-            get on a higher plan. It is a list of what is in front of you on day one, grouped the
-            way a garage door business actually runs.
+            Then everything else you would expect, included at the same price. Garage Door HQ is
+            one product with one plan, so this is not a list of what you would get if you paid
+            more — it is what is in front of you on day one.
           </Lede>
         </div>
 
         <nav aria-label="Feature groups" className="mt-10">
           <ul className="flex flex-wrap gap-2.5">
-            {GROUPS.map((group) => (
-              <li key={group.id}>
+            {[
+              ['door-passport', 'Door Passport'],
+              ['inspection', 'Inspection → Estimate'],
+              ['presentation', 'Presentation Mode'],
+              ['springs', 'Spring Lookup + Inventory'],
+              ['everything-else', 'Everything else'],
+            ].map(([id, label]) => (
+              <li key={id}>
                 <a
-                  href={`#${group.id}`}
+                  href={`#${id}`}
                   className="inline-block rounded-full border border-navy-700 bg-navy-900 px-4 py-2 text-sm font-semibold text-navy-100 transition-colors hover:border-brand-700 hover:text-white"
                 >
-                  {group.eyebrow}
+                  {label}
                 </a>
               </li>
             ))}
@@ -187,52 +118,249 @@ export default function FeaturesPage() {
         </nav>
       </Section>
 
-      {GROUPS.map((group, index) => (
-        <Section key={group.id} id={group.id} surface={index % 2 === 0 ? 'raised' : 'base'}>
-          <div
-            className={`grid items-start gap-10 ${
-              group.screen.kind === 'browser' ? 'lg:grid-cols-[1fr_1.1fr]' : 'lg:grid-cols-[1.25fr_0.75fr]'
-            } lg:gap-14`}
-          >
-            <div className={index % 2 === 0 ? '' : 'lg:order-2'}>
-              <Eyebrow>{group.eyebrow}</Eyebrow>
-              <Headline className="mt-3">{group.headline}</Headline>
-              <Lede className="mt-5">{group.lede}</Lede>
-
-              <dl className="mt-8 space-y-6">
-                {group.features.map((feature) => (
-                  <div key={feature.name}>
-                    <dt className="text-base font-bold text-white sm:text-lg">{feature.name}</dt>
-                    <dd className="mt-1.5 text-sm leading-relaxed text-navy-200 sm:text-base">
-                      {feature.detail}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-
-            <div className={index % 2 === 0 ? 'lg:order-2' : ''}>
-              <ScreenFigure caption={group.screen.caption}>
-                {group.screen.kind === 'phone' ? (
-                  <PhoneShot
-                    name={group.screen.name}
-                    alt={group.screen.alt}
-                    width={300}
-                    sizes="(max-width: 640px) 76vw, 300px"
-                  />
-                ) : (
-                  <BrowserShot
-                    name={group.screen.name}
-                    alt={group.screen.alt}
-                    sizes="(max-width: 1024px) 92vw, 600px"
-                  />
-                )}
-              </ScreenFigure>
-            </div>
+      {/* -------------------------------------------------- 1 · Door Passport */}
+      <ShowcaseFeature
+        id="door-passport"
+        surface="light"
+        eyebrow="01 · Door Passport"
+        headline="Every door is a record, not a line on an invoice."
+        lede="A customer has properties. A property has doors. Each door carries its own equipment, measurements and history — and keeps them when the technician who wrote them down leaves."
+        media={
+          <Showcase
+            name="desktop-door-passport"
+            alt="A Door Passport for a 16 by 7 foot insulated Clopay Premium Series 4050 in almond steel, 178 pounds measured, 2 inch standard lift track with a 15 inch radius, and a torsion system of two .225 by 2 by 27 inch 10,000-cycle springs"
+            caption="One door, as the application shows it."
+          />
+        }
+        below={
+          <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr]">
+            <FactList items={AT_THE_DOOR_FACTS} />
+            <Caveat title="Replacements are history, not overwrites">
+              Fit new springs and the old ones stay in the record with the date they came off.
+              The passport tells you what is on the door now and what was on it before.
+            </Caveat>
           </div>
-        </Section>
-      ))}
+        }
+      />
 
+      {/* --------------------------------------------- 2 · Inspection → Estimate */}
+      <Section surface="sunken" id="inspection">
+        <div className="max-w-3xl">
+          <Eyebrow>02 · Inspection → Estimate</Eyebrow>
+          <Headline className="mt-3">
+            A garage-door inspection, and the repair it produces.
+          </Headline>
+          <Lede className="mt-5">
+            Twenty-three components grouped the way the door is built. What the technician finds
+            becomes what the customer is offered, without anything being written out twice.
+          </Lede>
+        </div>
+
+        <Showcase
+          className="mt-12"
+          name="desktop-inspection"
+          alt="The inspection checklist grouped into spring system, hardware, door, opener and safety, with each component showing the answer set that applies to it"
+          caption="The checklist, grouped the way you work down a door."
+        />
+
+        <div className="mt-14 grid gap-10 lg:grid-cols-3">
+          <div>
+            <h3 className="text-lg font-bold text-ink">Each question has its own answers</h3>
+            <p className="mt-2.5 text-[0.9375rem] leading-relaxed text-ink-muted">
+              One Good/Worn/Failed scale is wrong for most of a door, and wrong in a way that
+              shows. Springs wear, so they are Good, Worn, Needs Attention or Failed. A balance
+              test is Balanced, Needs Adjustment or Unable to Test. Lubrication is Complete or
+              Needed. Noise is Normal or Excessive. Auto-reverse passes or fails.
+            </p>
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-ink">Findings become line items</h3>
+            <p className="mt-2.5 text-[0.9375rem] leading-relaxed text-ink-muted">
+              Anything worth quoting can be added to the estimate in one tap, priced from your own
+              price book, with the inspection photos attached. The remedy mapping is yours to
+              change.
+            </p>
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-ink">One option, or three</h3>
+            <p className="mt-2.5 text-[0.9375rem] leading-relaxed text-ink-muted">
+              Good / Better / Best is available when you want to present tiers. It is not
+              required, and nothing pads an estimate to fill a layout. If the fix is a spring,
+              present one price.
+            </p>
+            <Aside className="mt-4">
+              Anything typed during an inspection is saved on the device as you go and restored
+              if the page reloads, so a driveway with one bar does not cost you your notes. It
+              is a draft buffer, not full offline sync — the job still needs signal to save.
+            </Aside>
+          </div>
+        </div>
+      </Section>
+
+      {/* ---------------------------------------------- 3 · Presentation Mode */}
+      <Section surface="base" id="presentation">
+        <div className="grid items-center gap-12 lg:grid-cols-[1fr_1.05fr] lg:gap-16">
+          <div>
+            <Eyebrow>03 · Customer Presentation Mode</Eyebrow>
+            <Headline className="mt-3">Hand them your phone.</Headline>
+            <Lede className="mt-5">
+              Your device becomes the customer&rsquo;s estimate. They read what was found, choose
+              when there is a choice, and sign — without installing anything or finding an email.
+            </Lede>
+
+            <ol className="mt-8 space-y-3">
+              {[
+                'Technician taps Present to Customer',
+                'Hands over the phone or tablet',
+                'Customer reviews the work that was found',
+                'Chooses an option, when there is one',
+                'Signs with a finger',
+                'Hands the device back',
+              ].map((step, index) => (
+                <li key={step} className="flex gap-3.5 text-[0.9375rem] text-navy-100">
+                  <span className="num mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
+                    {index + 1}
+                  </span>
+                  {step}
+                </li>
+              ))}
+            </ol>
+
+            <Caveat title="Locked to one estimate, server-side">
+              Navigating anywhere else is refused by the server, not merely hidden in the
+              interface, and photos are limited to the ones on that estimate. Getting back out
+              needs a technician password, so handing over your phone is not handing over your
+              pricing, your other customers or your schedule.
+            </Caveat>
+
+            <p className="mt-6 text-[0.9375rem] leading-relaxed text-navy-200">
+              <strong className="text-white">Need to send it instead?</strong> For a full
+              installation proposal, emailing a link the customer can open later — and talk over
+              with whoever else lives there — is usually the better workflow. Both are built in.
+            </p>
+          </div>
+
+          <PhoneGallery
+            width={212}
+            screens={[
+              {
+                name: 'presentation-handover',
+                alt: 'The hand-over screen the technician sees before passing the device across',
+                label: 'Hand over',
+              },
+              {
+                name: 'presentation-customer',
+                alt: 'The homeowner reading the work found on their door and the repair options',
+                label: 'They choose',
+              },
+              {
+                name: 'presentation-signature',
+                alt: 'The customer signing on the phone with the chosen option and total above the pad',
+                label: 'They sign',
+              },
+            ]}
+          />
+        </div>
+      </Section>
+
+      {/* -------------------------------------- 4 · Spring lookup + inventory */}
+      <ShowcaseFeature
+        id="springs"
+        surface="light"
+        eyebrow="04 · Spring lookup + truck inventory"
+        headline="Know the spring. Know if you have it."
+        lede="Measure what is on the door and Garage Door HQ finds the matching parts in your price book — then tells you how many are on your truck, in the warehouse, and on everybody else's truck."
+        media={
+          <Showcase
+            name="desktop-spring-lookup"
+            alt="Spring lookup results for a .225 by 2 by 27 inch spring: two matching parts, the first showing 2 on Truck #1 and 9 in the warehouse, the second flagged as only 1 on Truck #1"
+            caption="Measurements in, matching parts and live stock out."
+          />
+        }
+        below={
+          <div className="grid gap-10 lg:grid-cols-[1fr_1fr]">
+            <FactList
+              items={[
+                'Wire size, inside diameter, length',
+                'Wind direction',
+                'Cycle rating, upgrades flagged',
+                'Quantity needed',
+                'Stock on your truck',
+                'Stock in the warehouse and other trucks',
+                'Add the match straight to an estimate',
+                'Open the part in inventory',
+              ]}
+            />
+            <Caveat title="Matching, not engineering">
+              This matches a spring you have measured against parts you stock. It does not
+              calculate a spring from a door weight — that is engineering, and a wrong answer puts
+              somebody under a loaded door. The screen says so rather than guessing.
+            </Caveat>
+          </div>
+        }
+      />
+
+      {/* ----------------------------------------------------- Everything else */}
+      <Section surface="raised" id="everything-else">
+        <div className="max-w-3xl">
+          <Eyebrow>Everything else</Eyebrow>
+          <Headline className="mt-3">The rest of the job, included.</Headline>
+          <Lede className="mt-5">
+            None of this costs extra and none of it is held back for a higher plan, because there
+            is no higher plan.
+          </Lede>
+        </div>
+
+        <div className="mt-12 space-y-12">
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-[0.18em] text-brand-400">
+              Run the day
+            </h3>
+            <CapabilityGrid items={RUN_THE_DAY} className="mt-5" />
+          </div>
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-[0.18em] text-brand-400">
+              Do the work
+            </h3>
+            <CapabilityGrid items={DO_THE_WORK} className="mt-5" />
+          </div>
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-[0.18em] text-brand-400">
+              Get paid
+            </h3>
+            <CapabilityGrid items={GET_PAID} className="mt-5" />
+          </div>
+        </div>
+      </Section>
+
+      {/* ------------------------------------------------- The office machine */}
+      <SplitFeature
+        surface="sunken"
+        wide
+        eyebrow="On the desktop too"
+        headline="Not just a phone app."
+        lede="The same product, laid out for a screen with room on it. Price book, schedule and money are easier from a desk, and nothing is missing from either side."
+        media={
+          <PhonePair
+            front={{
+              name: 'money',
+              alt: 'The Money screen on a phone, showing revenue, jobs, average ticket and outstanding invoices',
+            }}
+            behind={{
+              name: 'truck-inventory',
+              alt: 'Truck inventory on a phone, listing springs, rollers and openers with quantities per location',
+            }}
+          />
+        }
+      >
+        <Aside>
+          Estimated gross profit on the Money screen is charged less parts cost less processing
+          fees. It is for judging whether a job was worth doing. It is not accounting, and it does
+          not replace your books.
+        </Aside>
+      </SplitFeature>
+
+      {/* ------------------------------------------------------------- Final CTA */}
       <Section surface="deep">
         <div className="mx-auto max-w-2xl text-center">
           <Headline>See it with your own doors in it.</Headline>
@@ -240,10 +368,16 @@ export default function FeaturesPage() {
             Add a customer, a door and a job in the first ten minutes. Nothing here needs setting
             up before it works.
           </Lede>
-          <div className="mt-9">
-            <ButtonLink href="/signup" size="lg">
+          <div className="mt-9 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+            <ButtonLink href="/signup" size="lg" className="w-full sm:w-auto">
               Start Your {offer.trialDays}-Day Free Trial
             </ButtonLink>
+            <Link
+              href="/how-it-works"
+              className="text-sm font-semibold text-brand-300 hover:text-brand-200"
+            >
+              Or follow one service call through →
+            </Link>
           </div>
         </div>
       </Section>

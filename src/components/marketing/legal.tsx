@@ -26,11 +26,11 @@ export function LegalPage({
   const date = new Date(`${updated}T00:00:00Z`)
   return (
     <>
-      <Section surface="base" className="pt-12 sm:pt-16" tight>
+      <Section surface="base" className="pt-12 sm:pt-16" size="tight">
         <div className="mx-auto max-w-3xl">
           <Headline as="h1">{title}</Headline>
-          <p className="mt-5 text-base leading-relaxed text-navy-200 sm:text-lg">{summary}</p>
-          <p className="mt-6 text-sm text-navy-400">
+          <p className="mt-5 text-base leading-relaxed text-[color:var(--m-body)] sm:text-lg">{summary}</p>
+          <p className="mt-6 text-sm text-[color:var(--m-faint)]">
             Last updated{' '}
             <time dateTime={updated}>
               {date.toLocaleDateString('en-US', {
@@ -44,7 +44,7 @@ export function LegalPage({
         </div>
       </Section>
 
-      <Section surface="raised" tight>
+      <Section surface="light" size="tight">
         <div className="mx-auto max-w-3xl space-y-10">{children}</div>
       </Section>
     </>
@@ -54,8 +54,8 @@ export function LegalPage({
 export function Clause({ heading, children }: { heading: string; children: ReactNode }) {
   return (
     <section>
-      <h2 className="text-xl font-bold text-white sm:text-2xl">{heading}</h2>
-      <div className="mt-3.5 space-y-3.5 text-base leading-relaxed text-navy-200">{children}</div>
+      <h2 className="text-xl font-bold text-[color:var(--m-heading)] sm:text-2xl">{heading}</h2>
+      <div className="mt-3.5 space-y-3.5 text-base leading-relaxed text-[color:var(--m-body)]">{children}</div>
     </section>
   )
 }
@@ -65,7 +65,7 @@ export function Bullets({ items }: { items: readonly ReactNode[] }) {
     <ul className="space-y-2.5 pl-1">
       {items.map((item, index) => (
         <li key={index} className="flex gap-3">
-          <span aria-hidden className="mt-[0.6em] h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" />
+          <span aria-hidden className="mt-[0.6em] h-1.5 w-1.5 shrink-0 rounded-full bg-[color:var(--m-accent)]" />
           <span>{item}</span>
         </li>
       ))}

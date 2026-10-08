@@ -188,9 +188,11 @@ export function MarketingFooter() {
  *
  * The struck-through prices establish what the offer is off; the founding
  * price is the only number set large. All three come from `@/lib/pricing`, so
- * this component has no opinion about what any of them are — including whether
- * there is an offer at all, in which case the strikethroughs simply do not
- * render.
+ * this has no opinion about what any of them are — including whether there is
+ * an offer at all, in which case the strikethroughs simply do not render.
+ *
+ * Colours come from the surrounding surface, because this appears on the dark
+ * hero and again on a white pricing panel.
  */
 export function PriceBlock({
   size = 'lg',
@@ -207,7 +209,7 @@ export function PriceBlock({
   return (
     <div className={cn(centered && 'text-center', className)}>
       {offer.isFounding ? (
-        <p className="text-[0.6875rem] font-bold uppercase tracking-[0.18em] text-brand-300">
+        <p className="text-[0.6875rem] font-bold uppercase tracking-[0.18em] text-[color:var(--m-accent)]">
           Founding Member Offer
         </p>
       ) : null}
@@ -215,7 +217,7 @@ export function PriceBlock({
       {offer.strikethroughCents.length > 0 ? (
         <p
           className={cn(
-            'mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-navy-400',
+            'mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[color:var(--m-faint)]',
             centered && 'justify-center',
           )}
         >
@@ -229,17 +231,17 @@ export function PriceBlock({
 
       <p
         className={cn(
-          'num mt-1 font-bold leading-none text-white',
+          'num mt-1 font-bold leading-none text-[color:var(--m-heading)]',
           size === 'lg' ? 'text-5xl sm:text-6xl' : 'text-4xl sm:text-5xl',
         )}
       >
         {priceNumber(offer.priceCents)}
-        <span className="text-xl font-semibold text-navy-200 sm:text-2xl">
+        <span className="text-xl font-semibold text-[color:var(--m-body)] sm:text-2xl">
           /{offer.interval}
         </span>
       </p>
 
-      <p className="mt-3 text-sm font-semibold text-brand-300 sm:text-base">
+      <p className="mt-3 text-sm font-semibold text-[color:var(--m-accent-strong)] sm:text-base">
         {trialLabel()} · Everything included · Unlimited users
       </p>
     </div>

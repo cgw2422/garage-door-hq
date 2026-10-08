@@ -98,6 +98,62 @@ async function auditPage(page, route, width, price) {
       .map((img) => img.getAttribute('src')),
     scrollWidth: document.documentElement.scrollWidth,
     clientWidth: document.documentElement.clientWidth,
+
+    // Contrast, the way the light sections could actually break it.
+    //
+    // The site now alternates light and dark surfaces, and the colours inside
+    // a section come from CSS custom properties the surface sets. Get the
+    // surface class wrong on one section and you get white text on white —
+    // which looks like an empty page rather than an error, and which no
+    // typecheck can catch. This walks the text that carries the page and
+    // compares each element's colour against the background actually painted
+    // behind it.
+    lowContrast: (() => {
+      const parse = (value) => {
+        const match = /rgba?\(([^)]+)\)/.exec(value || '')
+        if (!match) return null
+        const [r, g, b, a = '1'] = match[1].split(/[\s,/]+/).filter(Boolean).map(Number)
+        return { r, g, b, a }
+      }
+      const luminance = ({ r, g, b }) => {
+        const channel = (v) => {
+          const c = v / 255
+          return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+      }
+      const backgroundOf = (el) => {
+        for (let node = el; node; node = node.parentElement) {
+          const bg = parse(getComputedStyle(node).backgroundColor)
+          if (bg && bg.a > 0.9) return bg
+        }
+        return { r: 255, g: 255, b: 255, a: 1 }
+      }
+
+      const bad = []
+      const selector = 'h1, h2, h3, p, li, dt, dd, summary, figcaption, a, span'
+      for (const el of document.querySelectorAll(selector)) {
+        const text = el.textContent?.trim()
+        if (!text || el.children.length > 0) continue
+        if (el.getClientRects().length === 0) continue
+
+        const style = getComputedStyle(el)
+        const fg = parse(style.color)
+        if (!fg || fg.a < 0.5) continue
+        const bg = backgroundOf(el)
+
+        const lightest = Math.max(luminance(fg), luminance(bg))
+        const darkest = Math.min(luminance(fg), luminance(bg))
+        const ratio = (lightest + 0.05) / (darkest + 0.05)
+
+        // 3:1 is the large-text threshold; anything under it is a mistake
+        // rather than a judgement call, whatever the size.
+        if (ratio < 3) {
+          bad.push({ text: text.slice(0, 50), ratio: Math.round(ratio * 100) / 100 })
+        }
+      }
+      return bad.slice(0, 6)
+    })(),
     title: document.title,
     description:
       document.querySelector('meta[name="description"]')?.getAttribute('content') ?? '',
@@ -164,6 +220,10 @@ async function auditPage(page, route, width, price) {
   // --- Layout -------------------------------------------------------------
   if (facts.scrollWidth > facts.clientWidth + 1) {
     fail(where, `scrolls horizontally (${facts.scrollWidth} > ${facts.clientWidth})`)
+  }
+
+  for (const item of facts.lowContrast) {
+    fail(where, `contrast ${item.ratio}:1 on "${item.text}"`)
   }
 
   // --- SEO, once per route -------------------------------------------------

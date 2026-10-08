@@ -67,7 +67,7 @@ export default function TermsPage() {
           what you record. The{' '}
           <Link
             href="/privacy"
-            className="font-semibold text-brand-300 underline hover:text-brand-200"
+            className="font-semibold text-[color:var(--m-accent)] underline hover:text-[color:var(--m-accent-strong)]"
           >
             Privacy Policy
           </Link>{' '}
@@ -187,14 +187,14 @@ export default function TermsPage() {
           {support ? (
             <a
               href={`mailto:${support}`}
-              className="font-semibold text-brand-300 underline hover:text-brand-200"
+              className="font-semibold text-[color:var(--m-accent)] underline hover:text-[color:var(--m-accent-strong)]"
             >
               {support}
             </a>
           ) : (
             <Link
               href="/contact"
-              className="font-semibold text-brand-300 underline hover:text-brand-200"
+              className="font-semibold text-[color:var(--m-accent)] underline hover:text-[color:var(--m-accent-strong)]"
             >
               our contact page
             </Link>

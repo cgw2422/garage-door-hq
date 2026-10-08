@@ -28,7 +28,7 @@ export default function PricingPage() {
 
   return (
     <>
-      <Section surface="base" className="pt-12 sm:pt-16">
+      <Section surface="base" className="pt-12 sm:pt-16" size="tight">
         <div className="mx-auto max-w-2xl text-center">
           <Eyebrow className="text-center">Pricing</Eyebrow>
           <Headline as="h1" className="mt-4">
@@ -46,14 +46,14 @@ export default function PricingPage() {
             <ButtonLink href="/signup" size="lg" fullWidth>
               Start Your {offer.trialDays}-Day Free Trial
             </ButtonLink>
-            <p className="mt-3 text-center text-sm text-navy-300">
+            <p className="mt-3 text-center text-sm text-[color:var(--m-muted)]">
               No charge for {offer.trialDays} days. Card details are entered when you activate,
               not before.
             </p>
           </div>
 
-          <div className="mt-9 border-t border-navy-700/70 pt-8">
-            <h2 className="text-[0.6875rem] font-bold uppercase tracking-[0.16em] text-navy-400">
+          <div className="mt-9 border-t border-[color:var(--m-rule)] pt-8">
+            <h2 className="text-[0.6875rem] font-bold uppercase tracking-[0.16em] text-[color:var(--m-faint)]">
               Included
             </h2>
             <CheckList items={INCLUDED_FEATURES} className="mt-4" />
@@ -61,17 +61,17 @@ export default function PricingPage() {
         </div>
 
         <div className="mx-auto mt-10 max-w-2xl rounded-[--radius-card] border border-navy-800 bg-navy-900 p-6 sm:p-7">
-          <p className="text-lg font-bold text-white sm:text-xl">
+          <p className="text-lg font-bold text-[color:var(--m-heading)] sm:text-xl">
             Hire another technician? Your Garage Door HQ subscription stays the same.
           </p>
-          <p className="mt-2.5 text-sm leading-relaxed text-navy-200 sm:text-base">
+          <p className="mt-2.5 text-sm leading-relaxed text-[color:var(--m-body)] sm:text-base">
             There is no per-user fee and no per-technician fee. A one-truck owner-operator and a
             six-truck company pay the same {currentPriceLabel()}.
           </p>
         </div>
       </Section>
 
-      <Section surface="raised">
+      <Section surface="light">
         <div className="mx-auto max-w-2xl">
           <Headline className="text-3xl sm:text-4xl">The things a price page usually skips</Headline>
 
@@ -101,19 +101,19 @@ export default function PricingPage() {
               },
             ].map((item) => (
               <div key={item.q}>
-                <dt className="text-base font-bold text-white sm:text-lg">{item.q}</dt>
-                <dd className="mt-2 text-sm leading-relaxed text-navy-200 sm:text-base">{item.a}</dd>
+                <dt className="text-base font-bold text-[color:var(--m-heading)] sm:text-lg">{item.q}</dt>
+                <dd className="mt-2 text-sm leading-relaxed text-[color:var(--m-body)] sm:text-base">{item.a}</dd>
               </div>
             ))}
           </dl>
 
-          <p className="mt-10 text-sm text-navy-300">
+          <p className="mt-10 text-sm text-[color:var(--m-muted)]">
             More questions?{' '}
-            <Link href="/faq" className="font-semibold text-brand-300 hover:text-brand-200">
+            <Link href="/faq" className="font-semibold text-[color:var(--m-accent)] hover:text-[color:var(--m-accent-strong)]">
               Read the FAQ
             </Link>{' '}
             or{' '}
-            <Link href="/contact" className="font-semibold text-brand-300 hover:text-brand-200">
+            <Link href="/contact" className="font-semibold text-[color:var(--m-accent)] hover:text-[color:var(--m-accent-strong)]">
               get in touch
             </Link>
             .

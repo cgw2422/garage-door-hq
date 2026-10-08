@@ -386,6 +386,8 @@ async function desktopScreens(browser) {
   const page = await context.newPage()
   try {
     await signIn(page)
+
+    // --- Fixed routes ------------------------------------------------------
     for (const [route, name] of [
       ['/today', 'desktop-today'],
       ['/schedule', 'desktop-schedule'],
@@ -394,12 +396,94 @@ async function desktopScreens(browser) {
       ['/inventory', 'desktop-inventory'],
       ['/money', 'desktop-money'],
       ['/settings/price-book', 'desktop-price-book'],
+      ['/invoices', 'desktop-invoices'],
     ]) {
       await page.goto(`${BASE}${route}`, { waitUntil: 'domcontentloaded' })
       await page.waitForTimeout(1400)
       await assertSafe(page, route)
       await shot(page, name)
     }
+
+    // --- The screens the big showcases are built on ------------------------
+    //
+    // These only existed as phone captures, which is fine beside a paragraph
+    // and useless at full width: a 390px screen stretched across 1100px is a
+    // blurry column with empty space either side. The sections that carry the
+    // most weight get the desktop rendering of the same screen.
+
+    // Sarah Wilson's door, by name — the 16x7 Clopay the copy describes.
+    await page.goto(`${BASE}/customers`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(1200)
+    const named = page.locator('a[href^="/customers/"]:has-text("Sarah Wilson")').first()
+    const anyCustomer = page.locator('a[href^="/customers/"]:not([href$="/new"])').first()
+    await ((await named.count()) ? named : anyCustomer).click()
+    await page.waitForURL(/\/customers\/[0-9a-f-]{36}/, { timeout: 40_000 })
+    await page.waitForTimeout(1300)
+    await assertSafe(page, 'desktop customer')
+    await shot(page, 'desktop-customer')
+
+    const door = page.locator('a[href^="/doors/"]').first()
+    if (await door.count()) {
+      await door.click()
+      await page.waitForURL(/\/doors\/[0-9a-f-]{36}/, { timeout: 40_000 })
+      await page.waitForTimeout(1400)
+      await assertSafe(page, 'desktop door passport')
+      await shot(page, 'desktop-door-passport')
+    }
+
+    // The inspection, mid-flight: the failed spring is already answered by the
+    // phone pass above, so this is the checklist as it stands afterwards.
+    await page.goto(`${BASE}/today`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(1200)
+    const jobHref = await page.locator('a[href^="/jobs/"]').first().getAttribute('href')
+    if (jobHref) {
+      await page.goto(`${BASE}${jobHref}/inspection`, { waitUntil: 'domcontentloaded' })
+      await page.waitForTimeout(1600)
+      await assertSafe(page, 'desktop inspection')
+      await shot(page, 'desktop-inspection')
+    }
+
+    await page.goto(`${BASE}/estimates`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(1300)
+    const estimate = page.locator('a[href^="/estimates/"]').first()
+    if (await estimate.count()) {
+      await estimate.click()
+      await page.waitForURL(/\/estimates\/[0-9a-f-]{36}/, { timeout: 40_000 })
+      await page.waitForTimeout(1500)
+      await assertSafe(page, 'desktop estimate')
+      await shot(page, 'desktop-estimate')
+    }
+
+    const anyInvoice = page.locator('a[href^="/invoices/"]:not([href$="/new"])')
+    await page.goto(`${BASE}/invoices`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(1300)
+    if (await anyInvoice.count()) {
+      await anyInvoice.first().click()
+      await page.waitForURL(/\/invoices\/[0-9a-f-]{36}/, { timeout: 40_000 })
+      await page.waitForTimeout(1400)
+      await assertSafe(page, 'desktop invoice')
+      await shot(page, 'desktop-invoice')
+    }
+
+    // Spring lookup, with the answer on screen rather than the empty form.
+    await page.goto(`${BASE}/tools/spring-calculator`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(1300)
+    for (const [selector, value] of [
+      ['input[name="wireSizeInches"]', '0.225'],
+      ['input[name="insideDiameterInches"]', '2'],
+      ['input[name="lengthInches"]', '27'],
+    ]) {
+      const field = page.locator(selector)
+      if (await field.count()) await field.fill(value)
+    }
+    const find = page.locator('button:has-text("Find Matching Springs")').first()
+    await find.scrollIntoViewIfNeeded()
+    await find.click()
+    const results = page.locator('text=/Matching Springs|No Matches/').first()
+    await results.waitFor({ timeout: 40_000 })
+    await assertSafe(page, 'desktop spring lookup')
+    await scrollToTopOf(page, results, 120)
+    await shot(page, 'desktop-spring-lookup', { settle: 600 })
   } finally {
     await context.close()
   }

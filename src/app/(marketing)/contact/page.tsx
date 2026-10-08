@@ -47,7 +47,7 @@ export default function ContactPage() {
 
   return (
     <>
-      <Section surface="base" className="pt-12 sm:pt-16">
+      <Section surface="base" className="pt-12 sm:pt-16" size="tight">
         <div className="max-w-3xl">
           <Eyebrow>Contact</Eyebrow>
           <Headline as="h1" className="mt-4">
@@ -71,7 +71,7 @@ export default function ContactPage() {
               </a>
             </div>
           ) : (
-            <p className="mt-9 rounded-[--radius-card] border border-navy-800 bg-navy-900 px-6 py-5 text-base text-navy-200">
+            <p className="mt-9 rounded-[--radius-card] border border-[color:var(--m-panel-border)] bg-[color:var(--m-panel)] px-6 py-5 text-base text-[color:var(--m-body)]">
               A support address has not been published yet. If you already have an account, use
               the support link inside the app.
             </p>
@@ -79,19 +79,19 @@ export default function ContactPage() {
         </div>
       </Section>
 
-      <Section surface="raised" tight>
+      <Section surface="light" size="tight">
         <div className="grid gap-6 lg:grid-cols-3">
           {ROUTES.map((route) => (
             <div
               key={route.title}
-              className="flex flex-col rounded-[--radius-card] border border-navy-800 bg-navy-950 p-6"
+              className="flex flex-col rounded-[--radius-card] border border-[color:var(--m-panel-border)] bg-[color:var(--m-panel)] p-6"
             >
-              <h2 className="text-lg font-bold text-white">{route.title}</h2>
-              <p className="mt-3 flex-1 text-sm leading-relaxed text-navy-200">{route.body}</p>
+              <h2 className="text-lg font-bold text-[color:var(--m-heading)]">{route.title}</h2>
+              <p className="mt-3 flex-1 text-sm leading-relaxed text-[color:var(--m-body)]">{route.body}</p>
               {support ? (
                 <a
                   href={`mailto:${support}?subject=${encodeURIComponent(route.subject)}`}
-                  className="mt-5 text-sm font-semibold text-brand-300 hover:text-brand-200"
+                  className="mt-5 text-sm font-semibold text-[color:var(--m-accent)] hover:text-[color:var(--m-accent-strong)]"
                 >
                   Email us about this →
                 </a>
@@ -101,7 +101,7 @@ export default function ContactPage() {
         </div>
       </Section>
 
-      <Section surface="base">
+      <Section surface="sunken">
         <div className="mx-auto max-w-2xl text-center">
           <Headline className="text-2xl sm:text-3xl">Already a customer?</Headline>
           <Lede className="mx-auto mt-4 text-center">
@@ -111,7 +111,7 @@ export default function ContactPage() {
           <p className="mt-7">
             <Link
               href="/login"
-              className="text-base font-semibold text-brand-300 hover:text-brand-200"
+              className="text-base font-semibold text-[color:var(--m-accent)] hover:text-[color:var(--m-accent-strong)]"
             >
               Sign in →
             </Link>
