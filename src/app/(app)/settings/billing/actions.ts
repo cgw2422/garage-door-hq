@@ -1,7 +1,6 @@
 'use server'
 
 import { redirect } from 'next/navigation'
-import { revalidatePath } from 'next/cache'
 import { requirePermission } from '@/lib/session'
 import { failure, type FormState } from '@/lib/form'
 import { createCheckoutSession, createPortalSession, refreshFromStripe } from '@/server/billing/service'
@@ -50,14 +49,20 @@ export async function openBillingPortalAction(
 }
 
 /**
- * Re-read the subscription from Stripe.
+ * Re-read the subscription from Stripe, for the billing page's own render.
  *
  * Called when someone comes back from Checkout. The redirect is not evidence
  * of anything — this asks Stripe — and the webhook is still the primary path.
  * This exists so the page the owner is looking at is right immediately rather
  * than whenever the webhook lands.
+ *
+ * **It must not revalidate.** This runs *during* the render of the page that
+ * is about to display the result, and Next refuses cache revalidation from
+ * inside a render — it throws, and the owner gets a server-error screen on the
+ * one page they reach seconds after paying. There is nothing to revalidate
+ * anyway: the render that called this is the render that shows the answer.
  */
-export async function refreshBillingAction(checkoutSessionId?: string | null) {
+export async function refreshBillingOnLoad(checkoutSessionId?: string | null) {
   const session = await requirePermission('subscription:manage')
   try {
     await refreshFromStripe(session, checkoutSessionId ?? null)
@@ -66,5 +71,4 @@ export async function refreshBillingAction(checkoutSessionId?: string | null) {
     // reconcile it. Log and move on.
     void failure(error, undefined, 'billing.refresh')
   }
-  revalidatePath('/settings/billing')
 }

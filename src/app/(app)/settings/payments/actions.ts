@@ -39,14 +39,18 @@ export async function connectStripeAction(
  * Called when someone returns from onboarding. Coming back from the return URL
  * proves nothing — a person can abandon the flow halfway and still land there.
  */
-export async function refreshConnectAction() {
+export async function refreshConnectOnLoad() {
   const session = await requirePermission('subscription:manage')
   try {
     await syncConnectAccount({ organizationId: session.organizationId })
   } catch (error) {
     void failure(error, undefined, 'payments.refresh')
   }
-  revalidatePath('/settings/payments')
+  // Deliberately does not revalidate. This runs during the render of the page
+  // that displays the result, and Next throws when a render asks for cache
+  // revalidation — which turned the return from Stripe Connect onboarding into
+  // a server-error screen. There is nothing to revalidate anyway: the render
+  // that called this is the render that shows the answer. A test enforces it.
 }
 
 export async function disconnectStripeAction(

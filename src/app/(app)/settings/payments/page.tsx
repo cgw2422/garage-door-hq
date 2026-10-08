@@ -7,7 +7,7 @@ import { Alert } from '@/components/ui/alert'
 import { Card, CardHeader, SectionHeading } from '@/components/ui/card'
 import { Chip } from '@/components/ui/status'
 import { ConnectStripeButton, DisconnectButton } from './connect-panel'
-import { refreshConnectAction } from './actions'
+import { refreshConnectOnLoad } from './actions'
 
 export const metadata: Metadata = { title: 'Customer payments' }
 export const dynamic = 'force-dynamic'
@@ -21,7 +21,8 @@ export default async function PaymentsSettingsPage({
   const { connected } = await searchParams
 
   // Coming back from onboarding proves nothing on its own — ask Stripe.
-  if (connected === '1') await refreshConnectAction()
+  // The non-revalidating form: this is a render.
+  if (connected === '1') await refreshConnectOnLoad()
 
   const status = await loadConnectStatus(session)
   const live = status.connected && status.chargesEnabled
