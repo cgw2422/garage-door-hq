@@ -148,6 +148,66 @@
   }
 }
 
+/* ==========================================================================
+   Marketing surfaces
+
+   The public site alternates light and dark sections, and the type, rules and
+   device frames inside a section have to follow it. React context cannot do
+   this — these pages are server components — and threading a `tone` prop
+   through every heading, list and frame is the kind of plumbing that goes
+   wrong in one place and is never noticed.
+
+   So the surface sets custom properties and everything inside reads them. The
+   cascade does the work, nesting behaves, and a new section type is six lines
+   here rather than a prop added to a dozen components.
+   ========================================================================== */
+@layer components {
+  .surface-dark {
+    --m-heading: #ffffff;
+    --m-body: var(--color-navy-200);
+    --m-muted: var(--color-navy-300);
+    --m-faint: var(--color-navy-400);
+    --m-accent: var(--color-brand-400);
+    --m-accent-strong: var(--color-brand-300);
+    --m-rule: var(--color-navy-800);
+    --m-panel: var(--color-navy-900);
+    --m-panel-border: var(--color-navy-800);
+    --m-chip-bg: var(--color-navy-800);
+    --m-chip-border: var(--color-navy-700);
+    --m-frame: var(--color-navy-700);
+    --m-frame-body: var(--color-navy-900);
+    --m-shadow: 0 30px 70px -20px rgb(0 0 0 / 0.75);
+  }
+
+  .surface-light {
+    --m-heading: var(--color-ink);
+    --m-body: var(--color-ink-muted);
+    --m-muted: var(--color-ink-muted);
+    --m-faint: var(--color-ink-subtle);
+    --m-accent: var(--color-brand-600);
+    --m-accent-strong: var(--color-brand-700);
+    --m-rule: var(--color-hairline);
+    --m-panel: #ffffff;
+    --m-panel-border: var(--color-hairline);
+    --m-chip-bg: var(--color-surface-sunken);
+    --m-chip-border: var(--color-hairline-strong);
+    --m-frame: var(--color-hairline-strong);
+    --m-frame-body: var(--color-navy-800);
+    --m-shadow: 0 24px 60px -24px rgb(15 23 42 / 0.28);
+  }
+
+  /* On the brand surface the accent cannot be the brand colour. */
+  .surface-brand {
+    --m-accent: var(--color-brand-100);
+    --m-accent-strong: #ffffff;
+    --m-body: var(--color-brand-50);
+    --m-muted: var(--color-brand-100);
+    --m-rule: var(--color-brand-500);
+    --m-chip-bg: var(--color-brand-700);
+    --m-chip-border: var(--color-brand-500);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

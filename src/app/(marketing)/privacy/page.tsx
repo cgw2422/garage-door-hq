@@ -85,21 +85,21 @@ export default function PrivacyPage() {
         <Bullets
           items={[
             <>
-              <strong className="text-white">Our hosting and database provider</strong>, which runs
+              <strong className="text-[color:var(--m-heading)]">Our hosting and database provider</strong>, which runs
               the application and stores its data.
             </>,
             <>
-              <strong className="text-white">Cloudflare R2</strong>, which stores photographs and
+              <strong className="text-[color:var(--m-heading)]">Cloudflare R2</strong>, which stores photographs and
               documents in a private bucket.
             </>,
             <>
-              <strong className="text-white">Stripe</strong>, which handles your subscription and,
+              <strong className="text-[color:var(--m-heading)]">Stripe</strong>, which handles your subscription and,
               where you have connected your own Stripe account, your customers&rsquo; card
               payments. Those payments are charged on your account, with your business as the
               merchant of record.
             </>,
             <>
-              <strong className="text-white">Resend</strong>, which delivers the emails the product
+              <strong className="text-[color:var(--m-heading)]">Resend</strong>, which delivers the emails the product
               sends.
             </>,
           ]}
@@ -133,7 +133,7 @@ export default function PrivacyPage() {
           links, and passwords are stored hashed.{' '}
           <Link
             href="/security"
-            className="font-semibold text-brand-300 underline hover:text-brand-200"
+            className="font-semibold text-[color:var(--m-accent)] underline hover:text-[color:var(--m-accent-strong)]"
           >
             The security page
           </Link>{' '}
@@ -174,14 +174,14 @@ export default function PrivacyPage() {
           {support ? (
             <a
               href={`mailto:${support}`}
-              className="font-semibold text-brand-300 underline hover:text-brand-200"
+              className="font-semibold text-[color:var(--m-accent)] underline hover:text-[color:var(--m-accent-strong)]"
             >
               {support}
             </a>
           ) : (
             <Link
               href="/contact"
-              className="font-semibold text-brand-300 underline hover:text-brand-200"
+              className="font-semibold text-[color:var(--m-accent)] underline hover:text-[color:var(--m-accent-strong)]"
             >
               our contact page
             </Link>

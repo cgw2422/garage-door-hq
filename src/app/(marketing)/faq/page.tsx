@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ButtonLink } from '@/components/ui/button'
 import { Eyebrow, Headline, Lede, Section } from '@/components/marketing/section'
+import { Accordion, AccordionItem } from '@/components/marketing/accordion'
 import { pageMetadata } from '@/lib/seo'
 import { currentOffer, currentPriceLabel, trialLabel } from '@/lib/pricing'
 
@@ -13,135 +14,228 @@ export const metadata: Metadata = pageMetadata({
 })
 
 /**
- * The FAQ.
+ * The FAQ, grouped and collapsed.
  *
- * Every answer here is checked against what the application does, not what it
- * would be convenient to claim. Where the honest answer has a limit in it, the
- * limit is in the answer: card payments need a connected Stripe account;
- * cancelling leaves the account read-only rather than deleting it; spring
- * lookup matches a measured spring rather than calculating one.
+ * Fifteen questions as one flat list of open answers was four screens of
+ * scrolling to find the one you came for. Five topics of collapsed answers is
+ * one screen, and the question you want is a heading rather than a paragraph
+ * to skim. The first item in each group opens on load so the pattern is
+ * obvious without instructions.
  *
- * The price answers are interpolated from `@/lib/pricing`, so this page cannot
- * be the one that still says $39.99 after the offer changes.
+ * Every answer is checked against what the application does. Where the honest
+ * answer has a limit in it, the limit is in the answer — spring lookup matches
+ * rather than sizes, cancelling leaves the account read-only rather than
+ * deleting it, card payments need a connected Stripe account.
+ *
+ * The structured data is generated from the same array the page renders, so
+ * the two cannot drift apart.
  */
 
 interface Entry {
   q: string
   /** Plain text. Always the structured-data answer, and the page's by default. */
   a: string
-  /**
-   * Rendered instead of `a` when the answer needs markup — a struck-through
-   * price, say. The plain `a` still goes to the structured data, so the two
-   * cannot say different things.
-   */
+  /** Rendered instead of `a` when the answer needs markup. */
   rich?: React.ReactNode
-  /** Optional extra paragraph, page only. */
+  /** An extra paragraph, page only. */
   more?: React.ReactNode
 }
 
-function entries(): Entry[] {
+interface Group {
+  id: string
+  title: string
+  blurb: string
+  entries: Entry[]
+}
+
+function groups(): Group[] {
   const offer = currentOffer()
+
   return [
     {
-      q: 'How much is Garage Door HQ?',
-      a: offer.isFounding
-        ? `${currentPriceLabel()} for Founding Members, down from $39.99/month or $399/year. It starts with a ${trialLabel()}, and everything is included.`
-        : `${currentPriceLabel()}, with a ${trialLabel()}. Everything is included.`,
-      rich: offer.isFounding ? (
-        <>
-          <strong className="num text-white">{currentPriceLabel()}</strong> for Founding Members,
-          down from{' '}
-          {offer.strikethroughCents.map((price, index) => (
-            <span key={price.interval}>
-              {index > 0 ? ' or ' : ''}
-              <s className="num text-navy-400">
-                ${price.cents / 100}/{price.interval}
-              </s>
-            </span>
-          ))}
-          . It starts with a {trialLabel()}, and everything is included.
-        </>
-      ) : undefined,
+      id: 'pricing',
+      title: 'Pricing & Billing',
+      blurb: 'What it costs, what happens at the end of the trial, and how to leave.',
+      entries: [
+        {
+          q: 'How much is Garage Door HQ?',
+          a: offer.isFounding
+            ? `${currentPriceLabel()} for Founding Members, down from $39.99/month or $399/year. It starts with a ${trialLabel()}, and everything is included.`
+            : `${currentPriceLabel()}, with a ${trialLabel()}. Everything is included.`,
+          rich: offer.isFounding ? (
+            <>
+              <strong className="num text-[color:var(--m-heading)]">{currentPriceLabel()}</strong>{' '}
+              for Founding Members, down from{' '}
+              {offer.strikethroughCents.map((price, index) => (
+                <span key={price.interval}>
+                  {index > 0 ? ' or ' : ''}
+                  <s className="num text-[color:var(--m-faint)]">
+                    ${price.cents / 100}/{price.interval}
+                  </s>
+                </span>
+              ))}
+              . It starts with a {trialLabel()}, and everything is included.
+            </>
+          ) : undefined,
+        },
+        {
+          q: 'Do you charge per technician?',
+          a: 'No. There is no per-user fee and no per-technician fee. Adding someone to your team does not change what you pay.',
+        },
+        {
+          q: 'Do I need a card to start the trial?',
+          a: `No. You sign up, you get ${offer.trialDays} days, and card details are entered when you choose to activate. Nothing is charged before that.`,
+        },
+        {
+          q: 'What happens when the trial ends?',
+          a: 'Your account becomes read-only. Every job, customer, door, photo, estimate and invoice stays visible — you simply cannot create or change anything until you activate.',
+        },
+        {
+          q: 'Can I cancel?',
+          a: 'Yes. Cancelling is done from the billing screen, which opens Stripe’s own portal, and takes effect at the end of the period you have already paid for. Partial periods are not pro-rated.',
+        },
+        {
+          q: 'Is my price locked in?',
+          a: offer.isFounding
+            ? 'Founding Members stay on the Stripe price they subscribed at. If the public price changes later, an existing subscription does not change with it.'
+            : 'You stay on the price you subscribed at unless you deliberately change plan.',
+        },
+        {
+          q: 'Does Garage Door HQ take a cut of what my customers pay me?',
+          a: 'No. Your customers pay you through your own connected Stripe account, where your business is the merchant of record. Those funds never pass through Garage Door HQ, and the only thing we bill you is this subscription.',
+        },
+      ],
     },
     {
-      q: 'Do you charge per technician?',
-      a: 'No. There is no per-user fee and no per-technician fee. Adding someone to your team does not change what you pay.',
+      id: 'getting-started',
+      title: 'Getting Started',
+      blurb: 'Whether it fits how you work today, and how long setup takes.',
+      entries: [
+        {
+          q: 'Can a one-man garage door company use Garage Door HQ?',
+          a: 'Yes, and it is set up for that by default. Choose "just me" at signup and your truck is called My Truck, the schedule is your schedule, and nothing asks you to assign work to yourself.',
+        },
+        {
+          q: 'How long does it take to set up?',
+          a: 'A new account arrives with a starter price book, garage-door job types, inspection remedies and an inventory location already in place, so you can add a customer, a door and a job in the first ten minutes. Replacing the starter prices with your own is the part that takes real time, and you can do it as you go.',
+        },
+        {
+          q: 'Can I use it on a desktop as well as a phone?',
+          a: 'Yes. It is the same application at any screen size. Field work suits a phone; the price book, the schedule and the money screen are easier from a desk.',
+        },
+        {
+          q: 'What about the technicians I hire later?',
+          a: 'Invite them by email. They get their own login and the technician role, which lets them do the work — jobs, inspections, estimates, photos, the parts on their truck — without seeing your pricing margins, your revenue, or your team settings. Your bill does not change.',
+        },
+      ],
     },
     {
-      q: 'Can a one-man garage door company use Garage Door HQ?',
-      a: 'Yes, and it is set up for that by default. Choose "just me" at signup and your truck is called My Truck, the schedule is your schedule, and nothing asks you to assign work to yourself.',
+      id: 'estimates',
+      title: 'Estimates & Customers',
+      blurb: 'How the customer sees the work, chooses it, and approves it.',
+      entries: [
+        {
+          q: 'Do I have to use Good / Better / Best?',
+          a: 'No. An estimate can have one option, two, or three. If the spring is broken and the repair is a spring, present one repair at one price. Good / Better / Best is there when you want to offer tiers.',
+        },
+        {
+          q: 'Does my customer need an app?',
+          a: 'No. Nothing is installed on the customer’s phone. They either sign on your device in Customer Presentation Mode, or open a link you send them in an ordinary web browser.',
+        },
+        {
+          q: 'Can my customer sign on my phone or tablet?',
+          a: 'Yes. You hand over the device, it locks to that one estimate, and they read, choose and sign on it. Navigating anywhere else is refused by the server rather than merely hidden, and a technician password is needed to get back out.',
+        },
+        {
+          q: 'Can I send estimates instead?',
+          a: 'Yes. You can email a customer a link to the estimate and they can review and approve it in their own time. For a full installation proposal that is usually the better workflow.',
+        },
+        {
+          q: 'Is a customer link safe to email?',
+          a: 'It carries a long random token, and only a hash of that token is stored, so the link cannot be reconstructed from our database. It opens that one document and nothing else — no account, no other customer — and it stops working after it expires or if you revoke it.',
+        },
+        {
+          q: 'Can I track multiple doors at one property?',
+          a: 'Yes. A customer has properties and a property has as many doors as it has. Each door is its own record with its own equipment and history, named however you point at it — Front Garage, Left Bay, Shop.',
+        },
+      ],
     },
     {
-      q: 'Do I have to use Good / Better / Best?',
-      a: 'No. An estimate can have one option, two, or three. If the spring is broken and the repair is a spring, present one repair at one price. Good / Better / Best is there when you want to offer tiers.',
+      id: 'equipment',
+      title: 'Equipment & Inventory',
+      blurb: 'The parts of the product that know what a garage door is.',
+      entries: [
+        {
+          q: 'Does Garage Door HQ track springs and openers?',
+          a: 'Yes, as equipment on the door rather than as notes. A spring system records type, wire size, inside diameter, length, wind direction and cycle rating. An opener records make, model and serial. When either is replaced, the old one stays in the history instead of being overwritten.',
+        },
+        {
+          q: 'Can I look up a spring?',
+          a: 'Yes. Enter the wire size, inside diameter and length you measured and Garage Door HQ finds the matching parts in your price book and shows how many are on your truck, in the warehouse and on other trucks.',
+          more: (
+            <>
+              What it deliberately does <strong className="text-[color:var(--m-heading)]">not</strong>{' '}
+              do is calculate a spring from a door weight. That is engineering, and a wrong answer
+              puts somebody under a loaded door. The screen says so rather than guessing.
+            </>
+          ),
+        },
+        {
+          q: 'Can I track inventory on individual trucks?',
+          a: 'Yes. Every truck is its own stock location, separate from the warehouse. You can transfer parts between locations, set a minimum quantity per location, and see what is below it. Completing a job with parts on it takes them off the location they came from.',
+        },
+        {
+          q: 'What does the inspection actually cover?',
+          a: 'Twenty-three components in five groups: spring system, hardware, door, opener and safety. Each one takes the kind of answer that component has, rather than one Good/Worn/Failed scale applied to everything — a balance test is Balanced or Needs Adjustment, lubrication is Complete or Needed, auto-reverse passes or fails.',
+        },
+        {
+          q: 'What happens if I lose signal mid-inspection?',
+          a: 'Anything typed is saved on the device as you go and restored if the page reloads, so you do not lose your notes. It is a draft buffer rather than full offline sync — the inspection still needs signal to save to the server.',
+        },
+      ],
     },
     {
-      q: 'Does my customer need an app?',
-      a: 'No. Nothing is installed on the customer’s phone. They either sign on your device in Customer Presentation Mode, or open a link you send them in an ordinary web browser.',
-    },
-    {
-      q: 'Can my customer sign on my phone or tablet?',
-      a: 'Yes. That is Customer Presentation Mode: you hand over the device, it locks to that one estimate, and they read, choose and sign on it. A technician password is needed to get back out, so handing over your phone does not hand over your business.',
-    },
-    {
-      q: 'Can I send estimates instead?',
-      a: 'Yes. You can email a customer a link to the estimate and they can review and approve it in their own time. For a full installation proposal that is usually the better workflow.',
-    },
-    {
-      q: 'Can I track multiple doors at one property?',
-      a: 'Yes. A customer has properties and a property has as many doors as it has. Each door is its own record with its own equipment and its own history, named however you point at it — Front Garage, Left Bay, Shop.',
-    },
-    {
-      q: 'Does Garage Door HQ track springs and openers?',
-      a: 'Yes, as equipment on the door rather than as notes. A spring system records type, wire size, inside diameter, length, wind direction and cycle rating. An opener records make, model and serial. When either is replaced, the old one stays in the history instead of being overwritten.',
-    },
-    {
-      q: 'Can I look up a spring?',
-      a: 'Yes. Enter the wire size, inside diameter and length you measured and Garage Door HQ finds the matching parts in your price book and shows how many are on your truck, in the warehouse and on other trucks.',
-      more: (
-        <>
-          What it deliberately does <strong className="text-white">not</strong> do is calculate a
-          spring from a door weight. That is engineering, and a wrong answer puts somebody under a
-          loaded door. The screen says so rather than guessing.
-        </>
-      ),
-    },
-    {
-      q: 'Can I track inventory on individual trucks?',
-      a: 'Yes. Every truck is its own stock location, separate from the warehouse. You can transfer parts between locations, set a minimum quantity per location, and see what is below it. Completing a job with parts on it takes them off the location they came from.',
-    },
-    {
-      q: 'Can I accept card payments?',
-      a: 'Yes, once you connect your own Stripe account from the payments settings. Your customer pays by card and the money settles into your account. You can also record cash and cheque payments without connecting anything.',
-    },
-    {
-      q: 'Does Garage Door HQ hold my customer’s money?',
-      a: 'No. Customer payments are charged directly on your own connected Stripe account — your business is the merchant of record, and the funds never pass through Garage Door HQ. The only thing we bill is your subscription.',
-    },
-    {
-      q: 'Can I cancel?',
-      a: 'Yes. Cancelling is done from the billing screen, which opens Stripe’s own portal, and takes effect at the end of the period you have already paid for.',
-    },
-    {
-      q: 'What happens to my data if I cancel?',
-      a: 'Your account becomes read-only. Every job, customer, door, photo, estimate and invoice stays visible and nothing is deleted automatically. If you come back later and activate again, it is all where you left it.',
-    },
-    {
-      q: 'Can I get my data out?',
-      a: 'Estimates and invoices download as PDFs from inside the app. For a full export of your account, contact support and we will arrange it.',
+      id: 'security',
+      title: 'Security & Data',
+      blurb: 'Who can see what, and what happens to it if you leave.',
+      entries: [
+        {
+          q: 'Can I accept card payments?',
+          a: 'Yes, once you connect your own Stripe account from the payments settings. Your customer pays by card and the money settles into your account. You can also record cash and cheque payments without connecting anything.',
+        },
+        {
+          q: 'Does Garage Door HQ hold my customer’s money?',
+          a: 'No. Customer payments are charged directly on your own connected Stripe account — your business is the merchant of record, and the funds never pass through Garage Door HQ.',
+        },
+        {
+          q: 'Is my company’s data separate from other companies?',
+          a: 'Yes. Every record belongs to exactly one company, and the database connection the application uses is scoped to your company before a query is written. A request for somebody else’s record does not return the wrong answer; it returns nothing. Tests deliberately try to cross that boundary on every build.',
+        },
+        {
+          q: 'What happens to my data if I cancel?',
+          a: 'Your account becomes read-only. Everything stays visible and nothing is deleted automatically. If you come back later and activate again, it is all where you left it. If you want it deleted instead, ask and we will do it.',
+        },
+        {
+          q: 'Can I get my data out?',
+          a: 'Estimates and invoices download as PDFs from inside the app. For a full export of your account, contact support and we will arrange it.',
+        },
+        {
+          q: 'Where are photos stored?',
+          a: 'In private object storage, not on a public web address. The application hands out short-lived links to the specific person allowed to see a specific photo, so an address that leaks stops working rather than staying open.',
+        },
+      ],
     },
   ]
 }
 
 export default function FaqPage() {
-  const items = entries()
+  const topics = groups()
+  const all = topics.flatMap((group) => group.entries)
 
-  // FAQPage structured data, generated from the same array the page renders,
-  // so the two can never say different things.
   const structuredData = {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
-    mainEntity: items.map((item) => ({
+    mainEntity: all.map((item) => ({
       '@type': 'Question',
       name: item.q,
       acceptedAnswer: { '@type': 'Answer', text: item.a },
@@ -162,31 +256,59 @@ export default function FaqPage() {
         {JSON.stringify(structuredData).replaceAll('<', '\\u003c')}
       </script>
 
-      <Section surface="base" className="pt-12 sm:pt-16">
+      <Section surface="base" className="pt-12 sm:pt-16" size="tight">
         <div className="max-w-3xl">
           <Eyebrow>FAQ</Eyebrow>
-          <Headline as="h1" className="mt-4">
+          <Headline as="h1" size="large" className="mt-4">
             Questions worth a straight answer.
           </Headline>
           <Lede className="mt-6">
             Including the ones where the honest answer has a limit in it.
           </Lede>
         </div>
+
+        <nav aria-label="Topics" className="mt-9">
+          <ul className="flex flex-wrap gap-2.5">
+            {topics.map((group) => (
+              <li key={group.id}>
+                <a
+                  href={`#${group.id}`}
+                  className="inline-block rounded-full border border-navy-700 bg-navy-900 px-4 py-2 text-sm font-semibold text-navy-100 transition-colors hover:border-brand-700 hover:text-white"
+                >
+                  {group.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
       </Section>
 
-      <Section surface="raised" tight>
-        <dl className="mx-auto max-w-3xl divide-y divide-navy-800">
-          {items.map((item) => (
-            <div key={item.q} className="py-7 first:pt-0 last:pb-0">
-              <dt className="text-lg font-bold text-white sm:text-xl">{item.q}</dt>
-              <dd className="mt-3 space-y-3 text-base leading-relaxed text-navy-200">
-                <p>{item.rich ?? item.a}</p>
-                {item.more ? <p>{item.more}</p> : null}
-              </dd>
+      {topics.map((group, groupIndex) => (
+        <Section
+          key={group.id}
+          id={group.id}
+          surface={groupIndex % 2 === 0 ? 'light' : 'sunken'}
+          size="tight"
+        >
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,18rem)_1fr] lg:gap-14">
+            <div className="lg:sticky lg:top-24 lg:self-start">
+              <Headline size="small">{group.title}</Headline>
+              <p className="mt-2.5 text-sm leading-relaxed text-[color:var(--m-body)]">
+                {group.blurb}
+              </p>
             </div>
-          ))}
-        </dl>
-      </Section>
+
+            <Accordion>
+              {group.entries.map((item, index) => (
+                <AccordionItem key={item.q} question={item.q} defaultOpen={index === 0}>
+                  <p>{item.rich ?? item.a}</p>
+                  {item.more ? <p>{item.more}</p> : null}
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </div>
+        </Section>
+      ))}
 
       <Section surface="deep">
         <div className="mx-auto max-w-2xl text-center">

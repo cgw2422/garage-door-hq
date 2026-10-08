@@ -9,7 +9,7 @@ import { Alert } from '@/components/ui/alert'
 import { Card, CardHeader, Divider, SectionHeading } from '@/components/ui/card'
 import { Chip } from '@/components/ui/status'
 import { ManageBillingButton, StartSubscriptionButton } from './billing-panel'
-import { refreshBillingAction } from './actions'
+import { refreshBillingOnLoad } from './actions'
 
 export const metadata: Metadata = { title: 'Billing' }
 export const dynamic = 'force-dynamic'
@@ -41,9 +41,10 @@ export default async function BillingPage({
   const { checkout } = await searchParams
 
   // Returning from Checkout. Confirm against Stripe rather than believing the
-  // redirect — anyone can type this URL.
+  // redirect — anyone can type this URL. Deliberately the non-revalidating
+  // form: this is a render, and revalidating from inside one throws.
   if (checkout && checkout !== 'cancelled') {
-    await refreshBillingAction(checkout)
+    await refreshBillingOnLoad(checkout)
   }
 
   const billing = await loadBillingOverview(session)

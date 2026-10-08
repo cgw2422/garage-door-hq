@@ -62,7 +62,7 @@ const TOPICS = [
 export default function SecurityPage() {
   return (
     <>
-      <Section surface="base" className="pt-12 sm:pt-16">
+      <Section surface="base" className="pt-12 sm:pt-16" size="tight">
         <div className="max-w-3xl">
           <Eyebrow>Security</Eyebrow>
           <Headline as="h1" className="mt-4">
@@ -75,21 +75,21 @@ export default function SecurityPage() {
         </div>
       </Section>
 
-      <Section surface="raised" tight>
+      <Section surface="light" size="tight">
         <div className="mx-auto max-w-3xl space-y-10">
           {TOPICS.map((topic) => (
             <article key={topic.title}>
-              <h2 className="text-xl font-bold text-white sm:text-2xl">{topic.title}</h2>
-              <p className="mt-3 text-base leading-relaxed text-navy-200">{topic.body}</p>
+              <h2 className="text-xl font-bold text-[color:var(--m-heading)] sm:text-2xl">{topic.title}</h2>
+              <p className="mt-3 text-base leading-relaxed text-[color:var(--m-body)]">{topic.body}</p>
             </article>
           ))}
         </div>
       </Section>
 
-      <Section surface="base">
+      <Section surface="sunken">
         <div className="mx-auto max-w-3xl">
           <Headline className="text-2xl sm:text-3xl">What we will not claim</Headline>
-          <div className="mt-6 space-y-4 text-base leading-relaxed text-navy-200">
+          <div className="mt-6 space-y-4 text-base leading-relaxed text-[color:var(--m-body)]">
             <p>
               No software is unbreakable, and anyone who tells you theirs is has told you
               something useful about themselves. Garage Door HQ is built carefully, tested
@@ -105,13 +105,13 @@ export default function SecurityPage() {
             </p>
           </div>
 
-          <div className="mt-10 rounded-[--radius-card] border border-navy-800 bg-navy-900 p-6">
-            <h2 className="text-lg font-bold text-white">Found something?</h2>
-            <p className="mt-2 text-base leading-relaxed text-navy-200">
+          <div className="mt-10 rounded-[--radius-card] border border-[color:var(--m-panel-border)] bg-[color:var(--m-panel)] p-6">
+            <h2 className="text-lg font-bold text-[color:var(--m-heading)]">Found something?</h2>
+            <p className="mt-2 text-base leading-relaxed text-[color:var(--m-body)]">
               If you believe you have found a security problem, please{' '}
               <Link
                 href="/contact"
-                className="font-semibold text-brand-300 underline hover:text-brand-200"
+                className="font-semibold text-[color:var(--m-accent)] underline hover:text-[color:var(--m-accent-strong)]"
               >
                 report it to us
               </Link>{' '}
